@@ -268,6 +268,29 @@ h3 {
   gap: 20px;
 }
 
+.dashboard-panel-switch {
+  display: inline-flex;
+  gap: 8px;
+  padding: 8px;
+  width: fit-content;
+  background: rgba(255, 255, 255, 0.62);
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+
+.dashboard-panel-tab {
+  min-width: 124px;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+}
+
+.dashboard-panel-tab.is-active {
+  background: var(--text);
+  color: white;
+}
+
 .section-panel {
   padding: 26px;
 }
@@ -296,10 +319,24 @@ h3 {
   gap: 14px;
 }
 
+.resource-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.metric-grid-priority {
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+}
+
+.metric-grid-support {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
 .metric-card {
   --tone: rgba(29, 92, 77, 0.26);
   padding: 18px;
   border-color: var(--line-strong);
+  min-height: 150px;
 }
 
 .metric-body {
@@ -375,7 +412,7 @@ h3 {
 .resource-detail-grid {
   margin-top: 16px;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
 }
 
@@ -395,6 +432,44 @@ h3 {
 .detail-list {
   display: grid;
   gap: 10px;
+}
+
+.docker-list {
+  display: grid;
+  gap: 10px;
+}
+
+.docker-row {
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(33, 47, 40, 0.08);
+  background: rgba(255, 252, 247, 0.82);
+  display: grid;
+  gap: 8px;
+}
+
+.docker-main {
+  display: grid;
+  gap: 3px;
+}
+
+.docker-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.docker-meta span {
+  display: inline-flex;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(29, 92, 77, 0.08);
+  color: var(--text);
+  border: 1px solid rgba(29, 92, 77, 0.1);
+}
+
+.footnote-inline {
+  line-height: 1.5;
 }
 
 .detail-row {
@@ -661,6 +736,65 @@ h3 {
   gap: 20px;
 }
 
+.logs-meta {
+  margin-top: 18px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.log-stream {
+  margin-top: 16px;
+  min-height: 520px;
+  max-height: 68vh;
+  overflow: auto;
+  padding: 16px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(180deg, rgba(25, 33, 29, 0.96), rgba(35, 41, 39, 0.98)),
+    rgba(16, 19, 18, 0.98);
+  color: #e6efe9;
+  font-family: "IBM Plex Mono", "Noto Sans Mono CJK SC", monospace;
+}
+
+.log-line {
+  padding: 12px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  display: grid;
+  gap: 8px;
+}
+
+.log-line:last-child {
+  border-bottom: 0;
+}
+
+.log-meta-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.log-time,
+.log-unit,
+.log-priority,
+.log-pid {
+  display: inline-flex;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #d6dfda;
+}
+
+.log-stream pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #f5f7f4;
+  line-height: 1.6;
+}
+
 .settings-form {
   margin-top: 18px;
   display: grid;
@@ -712,6 +846,10 @@ h3 {
   .settings-grid {
     grid-template-columns: 1fr;
   }
+
+  .resource-detail-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 900px) {
@@ -742,7 +880,8 @@ h3 {
 
   .auth-row,
   .toolbar,
-  .file-header {
+  .file-header,
+  .logs-meta {
     flex-direction: column;
     align-items: stretch;
   }
@@ -766,5 +905,16 @@ h3 {
 
   .detail-row {
     grid-template-columns: 1fr;
+  }
+
+  .dashboard-panel-switch,
+  .view-switch {
+    width: 100%;
+  }
+
+  .dashboard-panel-tab,
+  .view-tab {
+    flex: 1 1 0;
+    min-width: 0;
   }
 }

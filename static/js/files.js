@@ -147,6 +147,7 @@ export function renderFiles(payload) {
 
 export async function loadFiles() {
   const payload = await request(buildFilesUrl(dom.pathInput.value || state.currentPath || "/"));
+  state.filesLoaded = true;
   renderFiles(payload);
 }
 

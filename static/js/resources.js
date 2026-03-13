@@ -9,6 +9,7 @@ import {
   request,
   setChartPlaceholder,
   setResourcesPlaceholder,
+  state,
 } from "./shared.js";
 
 const CHART_SERIES = [
@@ -25,7 +26,72 @@ function detailRows(items, renderRow) {
   return items.map(renderRow).join("");
 }
 
-function renderResourceBreakdowns(snapshot) {
+function renderDockerCard(docker) {
+  if (!docker?.available) {
+    return `
+      <article class="detail-card detail-card-docker">
+        <div class="detail-head">
+          <div>
+            <h3>Docker 状态</h3>
+            <p class="muted">当前服务器上的运行中容器</p>
+          </div>
+        </div>
+        <div class="detail-empty">${escapeHtml(docker?.message || "docker 当前不可用")}</div>
+      </article>
+    `;
+  }
+
+  if (!docker.containers.length) {
+    return `
+      <article class="detail-card detail-card-docker">
+        <div class="detail-head">
+          <div>
+            <h3>Docker 状态</h3>
+            <p class="muted">当前服务器上的运行中容器</p>
+          </div>
+        </div>
+        <div class="detail-empty">${escapeHtml(docker.message || "当前没有运行中的容器")}</div>
+      </article>
+    `;
+  }
+
+  return `
+    <article class="detail-card detail-card-docker">
+      <div class="detail-head">
+        <div>
+          <h3>Docker 状态</h3>
+          <p class="muted">共 ${escapeHtml(String(docker.running_count))} 个运行中容器</p>
+        </div>
+      </div>
+      <div class="docker-list">
+        ${docker.containers
+          .map(
+            (container) => `
+              <div class="docker-row">
+                <div class="docker-main">
+                  <strong>${escapeHtml(container.name)}</strong>
+                  <small>${escapeHtml(container.image)}</small>
+                </div>
+                <div class="docker-meta">
+                  <span>${escapeHtml(container.status)}</span>
+                  <span>CPU ${escapeHtml(container.cpu_percent || "-")}</span>
+                  <span>内存 ${escapeHtml(container.memory_usage || "-")}</span>
+                </div>
+              </div>
+            `
+          )
+          .join("")}
+      </div>
+      ${
+        docker.message
+          ? `<p class="muted footnote-inline">${escapeHtml(docker.message)}</p>`
+          : ""
+      }
+    </article>
+  `;
+}
+
+function renderResourceBreakdowns(snapshot, docker) {
   const interfaces = [...(snapshot.network_interfaces || [])].sort(
     (left, right) => right.download_bps + right.upload_bps - (left.download_bps + left.upload_bps)
   );
@@ -55,6 +121,7 @@ function renderResourceBreakdowns(snapshot) {
         )}
       </div>
     </article>
+    ${renderDockerCard(docker)}
     <article class="detail-card">
       <div class="detail-head">
         <div>
@@ -78,7 +145,7 @@ function renderResourceBreakdowns(snapshot) {
   `;
 }
 
-export function renderResources(snapshot) {
+export function renderResources(snapshot, docker) {
   const swap = snapshot.swap || { used_mb: 0, total_mb: 0, free_mb: 0, used_percent: null };
   const inode = snapshot.inode || {
     used: 0,
@@ -131,84 +198,111 @@ export function renderResources(snapshot) {
   const establishedCount = Number.isFinite(Number(processes.established_connections))
     ? Number(processes.established_connections)
     : 0;
+  const dockerSummary = docker?.available
+    ? docker.running_count > 0
+      ? `${docker.running_count} 个运行中容器`
+      : "未检测到运行中的容器"
+    : docker?.message || "docker 不可用";
+  const dockerNote =
+    docker?.available && docker.containers?.length
+      ? docker.containers
+          .slice(0, 2)
+          .map((item) => item.name)
+          .join(" · ")
+      : "容器运行态已并入资源页";
 
-  dom.resourcesEl.className = "metric-grid";
-  dom.resourcesEl.innerHTML = [
-    metricCard({
-      label: "主机与运行时",
-      value: snapshot.hostname,
-      note: `${snapshot.uptime} · ${cpuCount ? `${cpuCount} vCPU` : "重启 agent 后显示 CPU 信息"}`,
-      tone: "tone-accent",
-    }),
-    metricCard({
-      label: "CPU 利用率",
-      value: cpuUsedPercent === null ? "等待采样" : formatPercent(cpuUsedPercent),
-      note: cpuCount ? `${cpuCount} vCPU · 实时利用率` : "CPU 实时利用率",
-      meter: cpuUsedPercent,
-      tone: "tone-accent",
-    }),
-    metricCard({
-      label: "Load",
-      value: `${snapshot.load_average.one.toFixed(2)} / ${snapshot.load_average.five.toFixed(2)} / ${snapshot.load_average.fifteen.toFixed(2)}`,
-      note:
-        loadRatioPercent === null
-          ? "1m / 5m / 15m，占比需重启 agent 后显示"
-          : `1m / 5m / 15m，当前约 ${formatPercent(loadRatioPercent)}`,
-      meter: loadRatioPercent,
-      tone: "tone-olive",
-    }),
-    metricCard({
-      label: "内存",
-      value: `${snapshot.memory.used_mb} / ${snapshot.memory.total_mb} MB`,
-      note: `available ${snapshot.memory.available_mb} MB`,
-      meter: memoryUsedPercent,
-      tone: "tone-green",
-    }),
-    metricCard({
-      label: "Swap",
-      value: `${swap.used_mb} / ${swap.total_mb} MB`,
-      note: `free ${swap.free_mb} MB`,
-      meter: swapUsedPercent,
-      tone: "tone-olive",
-    }),
-    metricCard({
-      label: "磁盘",
-      value: `${snapshot.root_disk.used} / ${snapshot.root_disk.total}`,
-      note:
-        diskUsedPercent === null
-          ? `${snapshot.root_disk.mount_point} · 占比待刷新`
-          : `${snapshot.root_disk.mount_point} · ${formatPercent(diskUsedPercent)}`,
-      meter: diskUsedPercent,
-      tone: "tone-amber",
-    }),
-    metricCard({
-      label: "网络吞吐",
-      value: `↓ ${formatRate(downloadRate)} / ↑ ${formatRate(uploadRate)}`,
-      note: "全网卡聚合实时速率",
-      tone: "tone-olive",
-    }),
-    metricCard({
-      label: "磁盘 I/O",
-      value: `读 ${formatRate(diskReadRate)} / 写 ${formatRate(diskWriteRate)}`,
-      note: "块设备聚合实时速率",
-      tone: "tone-amber",
-    }),
-    metricCard({
-      label: "Inode",
-      value: `${formatCount(inode.used)} / ${formatCount(inode.total)}`,
-      note: `${inode.mount_point} · 文件节点占用`,
-      meter: inodeUsedPercent,
-      tone: "tone-green",
-    }),
-    metricCard({
-      label: "进程 / 连接",
-      value: `${formatCount(processCount)} / ${formatCount(tcpConnectionCount)}`,
-      note: `总进程 / TCP 连接，已建立 ${formatCount(establishedCount)}`,
-      tone: "tone-accent",
-    }),
-  ].join("");
+  dom.resourcesEl.className = "resource-stack";
+  dom.resourcesEl.innerHTML = `
+    <div class="metric-grid metric-grid-priority">
+      ${[
+        metricCard({
+          label: "主机与运行时",
+          value: snapshot.hostname,
+          note: `${snapshot.uptime} · ${cpuCount ? `${cpuCount} vCPU` : "等待 CPU 信息"}`,
+          tone: "tone-accent",
+        }),
+        metricCard({
+          label: "CPU 利用率",
+          value: cpuUsedPercent === null ? "等待采样" : formatPercent(cpuUsedPercent),
+          note: cpuCount ? `${cpuCount} vCPU · 实时利用率` : "CPU 实时利用率",
+          meter: cpuUsedPercent,
+          tone: "tone-accent",
+        }),
+        metricCard({
+          label: "内存",
+          value: `${snapshot.memory.used_mb} / ${snapshot.memory.total_mb} MB`,
+          note: `available ${snapshot.memory.available_mb} MB`,
+          meter: memoryUsedPercent,
+          tone: "tone-green",
+        }),
+        metricCard({
+          label: "磁盘",
+          value: `${snapshot.root_disk.used} / ${snapshot.root_disk.total}`,
+          note:
+            diskUsedPercent === null
+              ? `${snapshot.root_disk.mount_point} · 占比待刷新`
+              : `${snapshot.root_disk.mount_point} · ${formatPercent(diskUsedPercent)}`,
+          meter: diskUsedPercent,
+          tone: "tone-amber",
+        }),
+        metricCard({
+          label: "Docker",
+          value: dockerSummary,
+          note: dockerNote,
+          tone: "tone-olive",
+        }),
+      ].join("")}
+    </div>
+    <div class="metric-grid metric-grid-support">
+      ${[
+        metricCard({
+          label: "Load",
+          value: `${snapshot.load_average.one.toFixed(2)} / ${snapshot.load_average.five.toFixed(2)} / ${snapshot.load_average.fifteen.toFixed(2)}`,
+          note:
+            loadRatioPercent === null
+              ? "1m / 5m / 15m，占比待刷新"
+              : `1m / 5m / 15m，当前约 ${formatPercent(loadRatioPercent)}`,
+          meter: loadRatioPercent,
+          tone: "tone-olive",
+        }),
+        metricCard({
+          label: "Swap",
+          value: `${swap.used_mb} / ${swap.total_mb} MB`,
+          note: `free ${swap.free_mb} MB`,
+          meter: swapUsedPercent,
+          tone: "tone-olive",
+        }),
+        metricCard({
+          label: "网络吞吐",
+          value: `↓ ${formatRate(downloadRate)} / ↑ ${formatRate(uploadRate)}`,
+          note: "全网卡聚合实时速率",
+          tone: "tone-green",
+        }),
+        metricCard({
+          label: "磁盘 I/O",
+          value: `读 ${formatRate(diskReadRate)} / 写 ${formatRate(diskWriteRate)}`,
+          note: "块设备聚合实时速率",
+          tone: "tone-amber",
+        }),
+        metricCard({
+          label: "Inode",
+          value: `${formatCount(inode.used)} / ${formatCount(inode.total)}`,
+          note: `${inode.mount_point} · 文件节点占用`,
+          meter: inodeUsedPercent,
+          tone: "tone-green",
+        }),
+        metricCard({
+          label: "进程 / 连接",
+          value: `${formatCount(processCount)} / ${formatCount(tcpConnectionCount)}`,
+          note: `总进程 / TCP 连接，已建立 ${formatCount(establishedCount)}`,
+          tone: "tone-accent",
+        }),
+      ].join("")}
+    </div>
+  `;
 
-  renderResourceBreakdowns(snapshot);
+  state.docker = docker;
+  renderResourceBreakdowns(snapshot, docker);
 }
 
 export function renderResourceChart(payload) {
@@ -290,13 +384,17 @@ export function renderResourceChart(payload) {
 }
 
 export async function loadResourcesSection({ forceRefresh = false } = {}) {
-  const [snapshotResult, historyResult] = await Promise.allSettled([
+  const [snapshotResult, historyResult, dockerResult] = await Promise.allSettled([
     request(`/api/resources${forceRefresh ? "?fresh=true" : ""}`),
     request("/api/resources/history"),
+    request("/api/runtime/docker"),
   ]);
 
   if (snapshotResult.status === "fulfilled") {
-    renderResources(snapshotResult.value);
+    renderResources(
+      snapshotResult.value,
+      dockerResult.status === "fulfilled" ? dockerResult.value : null
+    );
   } else {
     setResourcesPlaceholder(snapshotResult.reason.message);
     throw snapshotResult.reason;
@@ -306,5 +404,9 @@ export async function loadResourcesSection({ forceRefresh = false } = {}) {
     renderResourceChart(historyResult.value);
   } else {
     setChartPlaceholder(normalizeFeatureError(historyResult.reason, "资源趋势"));
+  }
+
+  if (dockerResult.status === "rejected") {
+    state.docker = null;
   }
 }

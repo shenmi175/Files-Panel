@@ -10,6 +10,12 @@ export const state = {
   parentPath: null,
   showHidden: false,
   activeView: "dashboard",
+  activeDashboardPanel: "resources",
+  filesLoaded: false,
+  docker: null,
+  logsLoaded: false,
+  logsCursor: null,
+  logLines: [],
 };
 
 export const dom = {
@@ -58,6 +64,15 @@ export const dom = {
   downloadButton: document.getElementById("download-button"),
   dashboardView: document.getElementById("dashboard-view"),
   settingsView: document.getElementById("settings-view"),
+  logsView: document.getElementById("logs-view"),
+  resourcePanel: document.getElementById("resource-panel"),
+  filesPanel: document.getElementById("files-panel"),
+  dashboardPanelTabs: document.querySelectorAll(".dashboard-panel-tab"),
+  logsRefreshButton: document.getElementById("refresh-logs"),
+  logsServiceEl: document.getElementById("logs-service"),
+  logsSummaryEl: document.getElementById("logs-summary"),
+  logsCursorEl: document.getElementById("logs-cursor"),
+  logsOutputEl: document.getElementById("logs-output"),
   viewTabs: document.querySelectorAll(".view-tab"),
 };
 
@@ -231,20 +246,37 @@ export function fileTypeGlyph(type) {
 }
 
 export function getViewFromHash() {
-  return window.location.hash === "#settings" ? "settings" : "dashboard";
+  if (window.location.hash === "#settings") {
+    return "settings";
+  }
+  if (window.location.hash === "#logs") {
+    return "logs";
+  }
+  return "dashboard";
 }
 
 export function setView(view) {
   state.activeView = view;
   dom.dashboardView.classList.toggle("hidden", view !== "dashboard");
   dom.settingsView.classList.toggle("hidden", view !== "settings");
+  dom.logsView.classList.toggle("hidden", view !== "logs");
   dom.viewTabs.forEach((button) => {
     button.classList.toggle("is-active", button.dataset.view === view);
   });
-  const nextHash = view === "settings" ? "#settings" : "#dashboard";
+  const nextHash =
+    view === "settings" ? "#settings" : view === "logs" ? "#logs" : "#dashboard";
   if (window.location.hash !== nextHash) {
     window.history.replaceState(null, "", nextHash);
   }
+}
+
+export function setDashboardPanel(panel) {
+  state.activeDashboardPanel = panel;
+  dom.resourcePanel.classList.toggle("hidden", panel !== "resources");
+  dom.filesPanel.classList.toggle("hidden", panel !== "files");
+  dom.dashboardPanelTabs.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.panel === panel);
+  });
 }
 
 export function updateHeroAccess() {
@@ -311,6 +343,14 @@ export function setFilesPlaceholder(message) {
   dom.pathBreadcrumbsEl.innerHTML = "";
 }
 
+export function setLogsPlaceholder(message) {
+  dom.logsServiceEl.textContent = "等待数据";
+  dom.logsSummaryEl.textContent = message;
+  dom.logsCursorEl.textContent = "游标未建立";
+  dom.logsOutputEl.className = "log-stream empty";
+  dom.logsOutputEl.textContent = message;
+}
+
 export function setAccessPlaceholder(message) {
   dom.accessCardsEl.className = "metric-grid empty";
   dom.accessCardsEl.textContent = message;
@@ -329,4 +369,5 @@ export function clearProtectedViews(message) {
   setFilesPlaceholder(message);
   setAccessPlaceholder(message);
   setConfigPlaceholder(message);
+  setLogsPlaceholder(message);
 }

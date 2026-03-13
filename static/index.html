@@ -26,6 +26,9 @@
             <button id="view-settings" class="view-tab" data-view="settings">
               配置
             </button>
+            <button id="view-logs" class="view-tab" data-view="logs">
+              日志
+            </button>
           </nav>
         </div>
 
@@ -62,12 +65,25 @@
       <div id="status" class="status hidden"></div>
 
       <section id="dashboard-view" class="view is-active">
-        <article class="panel section-panel resource-panel">
+        <div class="dashboard-panel-switch" aria-label="仪表盘内容切换">
+          <button
+            id="dashboard-panel-resources"
+            class="dashboard-panel-tab is-active"
+            data-panel="resources"
+          >
+            资源概览
+          </button>
+          <button id="dashboard-panel-files" class="dashboard-panel-tab" data-panel="files">
+            文件概览
+          </button>
+        </div>
+
+        <article id="resource-panel" class="panel section-panel resource-panel">
           <div class="section-head">
             <div>
               <p class="section-kicker">Runtime</p>
               <h2>资源概览</h2>
-              <p class="muted">上方是当前状态，下方曲线保留最近一段时间的资源变化。</p>
+              <p class="muted">上方聚焦当前状态，下方汇总 Docker、网卡、磁盘和趋势变化。</p>
             </div>
             <div class="section-actions">
               <span id="chart-range" class="ghost-chip">等待数据</span>
@@ -91,7 +107,7 @@
           </div>
         </article>
 
-        <article class="panel section-panel files-panel">
+        <article id="files-panel" class="panel section-panel files-panel hidden">
           <div class="section-head">
             <div>
               <p class="section-kicker">Files</p>
@@ -219,6 +235,29 @@
             </form>
           </article>
         </div>
+      </section>
+
+      <section id="logs-view" class="view hidden">
+        <article class="panel section-panel logs-panel">
+          <div class="section-head">
+            <div>
+              <p class="section-kicker">Logs</p>
+              <h2>运行日志</h2>
+              <p class="muted">实时轮询当前 agent 的 systemd 日志，适合排查接口和运行期问题。</p>
+            </div>
+            <div class="section-actions">
+              <span id="logs-service" class="ghost-chip">等待数据</span>
+              <button id="refresh-logs" class="secondary">刷新</button>
+            </div>
+          </div>
+
+          <div class="logs-meta">
+            <span id="logs-summary" class="ghost-chip">输入访问令牌后即可查看日志</span>
+            <span id="logs-cursor" class="ghost-chip">游标未建立</span>
+          </div>
+
+          <div id="logs-output" class="log-stream empty">输入访问令牌后即可查看实时日志</div>
+        </article>
       </section>
     </main>
 

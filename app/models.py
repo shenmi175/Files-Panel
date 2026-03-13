@@ -144,6 +144,46 @@ class ResourceHistoryResponse(BaseModel):
     points: list[ResourceHistoryPoint]
 
 
+class DockerContainerSummary(BaseModel):
+    id: str
+    name: str
+    image: str
+    state: str
+    status: str
+    ports: str
+    running_for: str
+    cpu_percent: str | None = None
+    memory_usage: str | None = None
+    memory_percent: str | None = None
+    network_io: str | None = None
+    block_io: str | None = None
+    pids: str | None = None
+
+
+class DockerStatusResponse(BaseModel):
+    available: bool
+    running_count: int
+    message: str | None = None
+    containers: list[DockerContainerSummary]
+
+
+class LogEntry(BaseModel):
+    cursor: str | None
+    timestamp: str
+    message: str
+    priority: str | None = None
+    pid: int | None = None
+    unit: str | None = None
+
+
+class LogsResponse(BaseModel):
+    available: bool
+    service_name: str | None
+    cursor: str | None
+    message: str | None = None
+    lines: list[LogEntry]
+
+
 class FileEntry(BaseModel):
     name: str
     path: str

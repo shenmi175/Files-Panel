@@ -5,6 +5,7 @@ import {
   getToken,
   getViewFromHash,
   request,
+  setDashboardPanel,
   setView,
   showStatus,
   state,
@@ -20,6 +21,7 @@ import {
   renameSelected,
   uploadFile,
 } from "./files.js";
+import { resetLogsState, loadLogsSection } from "./logs.js";
 import { loadResourcesSection } from "./resources.js";
 import {
   configureDomain,
@@ -29,12 +31,18 @@ import {
 } from "./settings.js";
 
 
+function canAccessProtectedViews() {
+  return !state.authEnabled || Boolean(getToken());
+}
+
+
 async function loadHealth() {
   const response = await fetch("/api/health");
   const payload = await response.json();
   state.authEnabled = Boolean(payload.auth_enabled);
   syncAuthPanel(false);
 }
+
 
 async function loadAgent() {
   const agent = await request("/api/agent");
@@ -49,11 +57,31 @@ async function loadAgent() {
   syncAuthPanel(false);
 }
 
-async function refreshDashboard({ includeFiles = true, forceResourceRefresh = false } = {}) {
-  const tasks = [loadResourcesSection({ forceRefresh: forceResourceRefresh })];
-  if (includeFiles) {
-    tasks.push(loadFiles());
+
+async function loadDashboardPanel(panel, { forceResourceRefresh = false } = {}) {
+  if (panel === "files") {
+    await loadFiles();
+    return;
   }
+  await loadResourcesSection({ forceRefresh: forceResourceRefresh });
+}
+
+
+async function refreshVisibleView({
+  forceResourceRefresh = false,
+  forceLogsReset = false,
+} = {}) {
+  clearStatus();
+  const tasks = [loadAccess()];
+
+  if (state.activeView === "dashboard") {
+    tasks.push(loadDashboardPanel(state.activeDashboardPanel, { forceResourceRefresh }));
+  } else if (state.activeView === "settings") {
+    tasks.push(loadConfig());
+  } else if (state.activeView === "logs") {
+    tasks.push(loadLogsSection({ reset: forceLogsReset || !state.logsLoaded }));
+  }
+
   const results = await Promise.allSettled(tasks);
   const failed = results.find((result) => result.status === "rejected");
   if (failed?.status === "rejected") {
@@ -61,21 +89,47 @@ async function refreshDashboard({ includeFiles = true, forceResourceRefresh = fa
   }
 }
 
-async function refreshAll({ includeFiles = true, forceResourceRefresh = false } = {}) {
-  clearStatus();
-  const tasks = [
-    refreshDashboard({ includeFiles, forceResourceRefresh }),
-    loadAccess(),
-  ];
-  if (state.activeView === "settings") {
-    tasks.push(loadConfig());
+
+async function handleTopLevelViewChange(view) {
+  setView(view);
+  if (!canAccessProtectedViews()) {
+    clearProtectedViews("输入访问令牌后即可继续操作");
+    return;
   }
-  const results = await Promise.allSettled(tasks);
-  const firstFailure = results.find((result) => result.status === "rejected");
-  if (firstFailure?.status === "rejected") {
-    showStatus(firstFailure.reason.message, "error");
+
+  if (view === "settings") {
+    await Promise.all([loadAccess(), loadConfig()]);
+    return;
+  }
+
+  await loadAccess();
+
+  if (view === "dashboard") {
+    await loadDashboardPanel(state.activeDashboardPanel);
+    return;
+  }
+
+  if (view === "logs") {
+    await loadLogsSection({ reset: !state.logsLoaded });
   }
 }
+
+
+async function handleDashboardPanelChange(panel) {
+  setDashboardPanel(panel);
+  if (!canAccessProtectedViews()) {
+    clearProtectedViews("输入访问令牌后即可继续操作");
+    return;
+  }
+  if (panel === "files" && !state.filesLoaded) {
+    await loadFiles();
+    return;
+  }
+  if (panel === "resources") {
+    await loadResourcesSection();
+  }
+}
+
 
 async function saveToken() {
   const nextToken = dom.tokenInput.value.trim();
@@ -88,7 +142,7 @@ async function saveToken() {
   dom.tokenInput.value = "";
   syncAuthPanel(false);
   try {
-    await refreshAll();
+    await refreshVisibleView({ forceLogsReset: true });
     showStatus("访问令牌已生效", "success");
   } catch (error) {
     window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
@@ -97,19 +151,27 @@ async function saveToken() {
   }
 }
 
+
 function clearToken() {
   window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
   state.access = null;
   state.config = null;
+  state.docker = null;
+  state.filesLoaded = false;
   state.selectedEntry = null;
+  resetLogsState();
   syncAuthPanel(true);
   clearProtectedViews("输入访问令牌后即可继续操作");
   showStatus("已清除当前会话令牌", "info");
 }
 
+
 function wireEvents() {
   dom.refreshButton.addEventListener("click", () =>
-    refreshAll({ forceResourceRefresh: true }).catch((error) => showStatus(error.message, "error"))
+    refreshVisibleView({ forceResourceRefresh: true }).catch((error) => showStatus(error.message, "error"))
+  );
+  dom.logsRefreshButton.addEventListener("click", () =>
+    loadLogsSection({ reset: true }).catch((error) => showStatus(error.message, "error"))
   );
   dom.loadFilesButton.addEventListener("click", () => loadFiles().catch((error) => showStatus(error.message, "error")));
   dom.goUpButton.addEventListener("click", goUp);
@@ -144,27 +206,29 @@ function wireEvents() {
   });
   dom.viewTabs.forEach((button) => {
     button.addEventListener("click", () => {
-      setView(button.dataset.view);
-      if (button.dataset.view === "settings" && (!state.access || !state.config)) {
-        Promise.allSettled([loadAccess(), loadConfig()]).then((results) => {
-          const failed = results.find((result) => result.status === "rejected");
-          if (failed?.status === "rejected") {
-            showStatus(failed.reason.message, "error");
-          }
-        });
-      }
+      handleTopLevelViewChange(button.dataset.view).catch((error) => showStatus(error.message, "error"));
     });
   });
-  window.addEventListener("hashchange", () => setView(getViewFromHash()));
+  dom.dashboardPanelTabs.forEach((button) => {
+    button.addEventListener("click", () => {
+      handleDashboardPanelChange(button.dataset.panel).catch((error) => showStatus(error.message, "error"));
+    });
+  });
+  window.addEventListener("hashchange", () => {
+    handleTopLevelViewChange(getViewFromHash()).catch((error) => showStatus(error.message, "error"));
+  });
 }
 
+
 async function boot() {
+  setDashboardPanel(state.activeDashboardPanel);
   setView(getViewFromHash());
+  resetLogsState();
   try {
     await loadHealth();
     await loadAgent();
     if (!state.authEnabled || getToken()) {
-      await refreshAll();
+      await refreshVisibleView({ forceLogsReset: true });
     } else {
       clearProtectedViews("输入访问令牌后即可读取本机信息");
     }
@@ -174,13 +238,25 @@ async function boot() {
   }
 }
 
+
 wireEvents();
 boot();
 window.setInterval(() => {
-  if (!state.authEnabled || getToken()) {
-    refreshDashboard({ includeFiles: false }).catch(() => {});
-    if (state.activeView === "settings") {
-      loadAccess().catch(() => {});
-    }
+  if (!canAccessProtectedViews()) {
+    return;
+  }
+
+  if (state.activeView === "dashboard" && state.activeDashboardPanel === "resources") {
+    loadResourcesSection().catch(() => {});
+    return;
+  }
+
+  if (state.activeView === "settings") {
+    loadAccess().catch(() => {});
+    return;
+  }
+
+  if (state.activeView === "logs") {
+    loadLogsSection().catch(() => {});
   }
 }, 15000);
