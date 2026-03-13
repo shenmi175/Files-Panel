@@ -1,18 +1,26 @@
 const TOKEN_STORAGE_KEY = "files_agent_token";
+const CHART_SERIES = [
+  { key: "memory_used_percent", label: "内存", color: "#1d5c4d" },
+  { key: "disk_used_percent", label: "磁盘", color: "#c57a38" },
+  { key: "load_ratio_percent", label: "负载", color: "#6a7b54" },
+];
 
 const state = {
   agent: null,
   access: null,
+  config: null,
   authEnabled: false,
   selectedEntry: null,
   currentPath: "/",
   parentPath: null,
+  showHidden: false,
+  activeView: "dashboard",
 };
 
 const agentNameEl = document.getElementById("agent-name");
 const agentHostnameEl = document.getElementById("agent-hostname");
 const agentUserEl = document.getElementById("agent-user");
-const agentRootEl = document.getElementById("agent-root");
+const agentEntryEl = document.getElementById("agent-entry");
 const agentAuthEl = document.getElementById("agent-auth");
 const authPanel = document.getElementById("auth-panel");
 const tokenInput = document.getElementById("token-input");
@@ -20,22 +28,58 @@ const saveTokenButton = document.getElementById("save-token");
 const clearTokenButton = document.getElementById("clear-token");
 const refreshButton = document.getElementById("refresh-dashboard");
 const resourcesEl = document.getElementById("resources");
+const chartRangeEl = document.getElementById("chart-range");
+const chartCaptionEl = document.getElementById("chart-caption");
+const chartLegendEl = document.getElementById("chart-legend");
+const resourceChartEl = document.getElementById("resource-chart");
 const accessSummaryEl = document.getElementById("access-summary");
 const accessCardsEl = document.getElementById("access-cards");
+const configSummaryEl = document.getElementById("config-summary");
 const domainForm = document.getElementById("domain-form");
 const domainInput = document.getElementById("domain-input");
+const configForm = document.getElementById("config-form");
+const configAgentNameInput = document.getElementById("config-agent-name");
+const configAgentRootInput = document.getElementById("config-agent-root");
+const configPortInput = document.getElementById("config-port");
+const configCertbotEmailInput = document.getElementById("config-certbot-email");
+const configAllowPublicInput = document.getElementById("config-allow-public");
+const configAllowRestartInput = document.getElementById("config-allow-restart");
 const filesEl = document.getElementById("files");
 const activePathLabel = document.getElementById("active-path");
 const pathInput = document.getElementById("path-input");
 const loadFilesButton = document.getElementById("load-files");
 const goUpButton = document.getElementById("go-up");
+const showHiddenToggle = document.getElementById("show-hidden-toggle");
 const statusEl = document.getElementById("status");
 const uploadInput = document.getElementById("upload-input");
 const uploadButton = document.getElementById("upload-button");
+const filePickerLabel = document.querySelector(".file-picker span");
 const createDirButton = document.getElementById("create-dir-button");
 const renameButton = document.getElementById("rename-button");
 const deleteButton = document.getElementById("delete-button");
 const downloadButton = document.getElementById("download-button");
+const dashboardView = document.getElementById("dashboard-view");
+const settingsView = document.getElementById("settings-view");
+const viewTabs = document.querySelectorAll(".view-tab");
+
+function escapeHtml(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case "&":
+        return "&amp;";
+      case "<":
+        return "&lt;";
+      case ">":
+        return "&gt;";
+      case '"':
+        return "&quot;";
+      case "'":
+        return "&#39;";
+      default:
+        return char;
+    }
+  });
+}
 
 function getToken() {
   return window.sessionStorage.getItem(TOKEN_STORAGE_KEY) || "";
@@ -85,20 +129,17 @@ function clearStatus() {
   statusEl.className = "status hidden";
 }
 
-function syncAuthPanel(forceVisible = false) {
-  const visible = state.authEnabled && (forceVisible || !getToken());
-  authPanel.classList.toggle("hidden", !visible);
-  agentAuthEl.textContent = state.authEnabled
-    ? getToken()
-      ? "已启用 Bearer Token"
-      : "需要 Bearer Token"
-    : "未启用访问令牌";
-}
-
-function setAccessPlaceholder(message) {
-  accessCardsEl.classList.add("empty");
-  accessCardsEl.textContent = message;
-  accessSummaryEl.textContent = message;
+function metricCard({ label, value, note, meter = null, tone = "" }) {
+  const meterWidth =
+    meter === null ? null : meter <= 0 ? 0 : Math.max(4, Math.min(100, meter));
+  return `
+    <div class="metric-card ${tone}">
+      <span>${escapeHtml(label)}</span>
+      <strong>${escapeHtml(value)}</strong>
+      <small>${escapeHtml(note)}</small>
+      ${meterWidth === null ? "" : `<div class="meter"><i style="width:${meterWidth}%"></i></div>`}
+    </div>
+  `;
 }
 
 function formatBytes(value) {
@@ -119,9 +160,133 @@ function formatTimestamp(epoch) {
   return new Date(epoch * 1000).toLocaleString("zh-CN", { hour12: false });
 }
 
+function formatShortTime(timestamp) {
+  return new Date(timestamp).toLocaleTimeString("zh-CN", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function formatPercent(value) {
+  return `${Number(value).toFixed(0)}%`;
+}
+
 function joinPath(basePath, nextName) {
   const normalizedBase = basePath === "/" ? "/" : basePath.replace(/\/$/, "");
   return normalizedBase === "/" ? `/${nextName}` : `${normalizedBase}/${nextName}`;
+}
+
+function fileTypeLabel(type) {
+  switch (type) {
+    case "directory":
+      return "目录";
+    case "symlink":
+      return "链接";
+    case "file":
+      return "文件";
+    default:
+      return "其他";
+  }
+}
+
+function buildFilesUrl(targetPath) {
+  const params = new URLSearchParams();
+  params.set("path", targetPath || "/");
+  if (state.showHidden) {
+    params.set("show_hidden", "true");
+  }
+  return `/api/files?${params.toString()}`;
+}
+
+function getViewFromHash() {
+  return window.location.hash === "#settings" ? "settings" : "dashboard";
+}
+
+function setView(view) {
+  state.activeView = view;
+  dashboardView.classList.toggle("hidden", view !== "dashboard");
+  settingsView.classList.toggle("hidden", view !== "settings");
+  viewTabs.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.view === view);
+  });
+  const nextHash = view === "settings" ? "#settings" : "#dashboard";
+  if (window.location.hash !== nextHash) {
+    window.history.replaceState(null, "", nextHash);
+  }
+}
+
+function syncAuthPanel(forceVisible = false) {
+  const visible = state.authEnabled && (forceVisible || !getToken());
+  authPanel.classList.toggle("hidden", !visible);
+  updateHeroAccess();
+}
+
+function updateHeroAccess() {
+  if (!state.access) {
+    agentEntryEl.textContent = state.authEnabled && !getToken() ? "等待令牌" : "等待接入状态";
+    agentAuthEl.textContent = state.authEnabled
+      ? getToken()
+        ? "Bearer Token 已启用"
+        : "需要 Bearer Token"
+      : "未启用访问令牌";
+    return;
+  }
+
+  if (state.access.public_url) {
+    agentEntryEl.textContent = state.access.public_url.replace(/^https?:\/\//, "");
+    agentAuthEl.textContent = state.access.https_enabled
+      ? "域名入口已启用 HTTPS"
+      : "域名已接入，HTTPS 申请中";
+    return;
+  }
+
+  if (state.access.public_ip_access_enabled) {
+    agentEntryEl.textContent = `IP:${state.access.desired_bind_port}`;
+    agentAuthEl.textContent = state.authEnabled
+      ? getToken()
+        ? "临时 IP 入口 + Bearer Token"
+        : "临时 IP 入口，需 Bearer Token"
+      : "当前允许通过 IP:端口 访问";
+    return;
+  }
+
+  agentEntryEl.textContent = "仅本地监听";
+  agentAuthEl.textContent = state.authEnabled
+    ? getToken()
+      ? "仅本地访问，Bearer Token 已启用"
+      : "仅本地访问，需 Bearer Token"
+    : "仅本地访问";
+}
+
+function setResourcesPlaceholder(message) {
+  resourcesEl.className = "metric-grid empty";
+  resourcesEl.textContent = message;
+}
+
+function setChartPlaceholder(message) {
+  chartRangeEl.textContent = "等待数据";
+  chartCaptionEl.textContent = message;
+  chartLegendEl.innerHTML = "";
+  resourceChartEl.className = "chart empty";
+  resourceChartEl.textContent = message;
+}
+
+function setFilesPlaceholder(message) {
+  filesEl.className = "file-list empty";
+  filesEl.textContent = message;
+}
+
+function setAccessPlaceholder(message) {
+  accessCardsEl.className = "metric-grid empty";
+  accessCardsEl.textContent = message;
+  accessSummaryEl.textContent = message;
+  updateHeroAccess();
+}
+
+function setConfigPlaceholder(message) {
+  configSummaryEl.className = "metric-grid empty";
+  configSummaryEl.textContent = message;
 }
 
 async function loadHealth() {
@@ -135,59 +300,119 @@ async function loadAgent() {
   const agent = await request("/api/agent");
   state.agent = agent;
   state.currentPath = agent.root_path;
+  state.parentPath = null;
   pathInput.value = agent.root_path;
   activePathLabel.textContent = agent.root_path;
   agentNameEl.textContent = agent.agent_name;
   agentHostnameEl.textContent = agent.hostname;
   agentUserEl.textContent = agent.current_user;
-  agentRootEl.textContent = agent.root_path;
   syncAuthPanel(false);
 }
 
 function renderResources(snapshot) {
-  resourcesEl.classList.remove("empty");
-  resourcesEl.innerHTML = `
-    <div class="card">
-      <span>主机</span>
-      <strong>${snapshot.hostname}</strong>
-      <small>${snapshot.uptime}</small>
-    </div>
-    <div class="card">
-      <span>Load</span>
-      <strong>${snapshot.load_average.one.toFixed(2)} / ${snapshot.load_average.five.toFixed(2)} / ${snapshot.load_average.fifteen.toFixed(2)}</strong>
-      <small>1m / 5m / 15m</small>
-    </div>
-    <div class="card">
-      <span>内存</span>
-      <strong>${snapshot.memory.used_mb} / ${snapshot.memory.total_mb} MB</strong>
-      <small>available ${snapshot.memory.available_mb} MB</small>
-    </div>
-    <div class="card">
-      <span>磁盘</span>
-      <strong>${snapshot.root_disk.used} / ${snapshot.root_disk.total}</strong>
-      <small>${snapshot.root_disk.mount_point} · ${snapshot.root_disk.used_percent}</small>
-    </div>
+  resourcesEl.className = "metric-grid";
+  resourcesEl.innerHTML = [
+    metricCard({
+      label: "主机与运行时",
+      value: snapshot.hostname,
+      note: `${snapshot.uptime} · ${snapshot.cpu_count} vCPU`,
+      tone: "tone-accent",
+    }),
+    metricCard({
+      label: "Load",
+      value: `${snapshot.load_average.one.toFixed(2)} / ${snapshot.load_average.five.toFixed(2)} / ${snapshot.load_average.fifteen.toFixed(2)}`,
+      note: `1m / 5m / 15m，当前约 ${formatPercent(snapshot.load_ratio_percent)}`,
+      meter: snapshot.load_ratio_percent,
+      tone: "tone-olive",
+    }),
+    metricCard({
+      label: "内存",
+      value: `${snapshot.memory.used_mb} / ${snapshot.memory.total_mb} MB`,
+      note: `available ${snapshot.memory.available_mb} MB`,
+      meter: snapshot.memory.used_percent,
+      tone: "tone-green",
+    }),
+    metricCard({
+      label: "磁盘",
+      value: `${snapshot.root_disk.used} / ${snapshot.root_disk.total}`,
+      note: `${snapshot.root_disk.mount_point} · ${formatPercent(snapshot.root_disk.used_percent)}`,
+      meter: snapshot.root_disk.used_percent,
+      tone: "tone-amber",
+    }),
+  ].join("");
+}
+
+function renderResourceChart(payload) {
+  const points = payload.points || [];
+  chartLegendEl.innerHTML = CHART_SERIES.map(
+    (series) => `
+      <span class="legend-chip">
+        <i style="background:${series.color}"></i>
+        ${escapeHtml(series.label)}
+      </span>
+    `
+  ).join("");
+
+  if (!points.length) {
+    setChartPlaceholder("暂无趋势数据");
+    return;
+  }
+
+  const width = 960;
+  const height = 280;
+  const padding = { top: 18, right: 16, bottom: 32, left: 30 };
+  const plotWidth = width - padding.left - padding.right;
+  const plotHeight = height - padding.top - padding.bottom;
+  const x = (index) =>
+    points.length === 1
+      ? padding.left + plotWidth / 2
+      : padding.left + (index / (points.length - 1)) * plotWidth;
+  const y = (value) =>
+    padding.top + ((100 - Math.max(0, Math.min(100, value))) / 100) * plotHeight;
+
+  const gridValues = [0, 25, 50, 75, 100];
+  const grid = gridValues
+    .map(
+      (value) => `
+        <line x1="${padding.left}" y1="${y(value)}" x2="${width - padding.right}" y2="${y(value)}" />
+        <text x="2" y="${y(value) + 4}">${value}%</text>
+      `
+    )
+    .join("");
+
+  const lines = CHART_SERIES.map((series) => {
+    const polylinePoints = points
+      .map((point, index) => `${x(index)},${y(point[series.key])}`)
+      .join(" ");
+    const lastPoint = points[points.length - 1];
+    return `
+      <polyline fill="none" stroke="${series.color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${polylinePoints}" />
+      <circle cx="${x(points.length - 1)}" cy="${y(lastPoint[series.key])}" r="4.5" fill="${series.color}" />
+    `;
+  }).join("");
+
+  const startLabel = formatShortTime(points[0].timestamp);
+  const endLabel = formatShortTime(points[points.length - 1].timestamp);
+  chartRangeEl.textContent = `最近 ${points.length} 个采样点 · 每 ${payload.interval_seconds} 秒`;
+  chartCaptionEl.textContent = `${startLabel} - ${endLabel}`;
+  resourceChartEl.className = "chart";
+  resourceChartEl.innerHTML = `
+    <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-label="资源趋势图">
+      <g class="chart-grid">${grid}</g>
+      <g class="chart-lines">${lines}</g>
+      <text class="chart-axis" x="${padding.left}" y="${height - 8}">${escapeHtml(startLabel)}</text>
+      <text class="chart-axis" x="${width - padding.right}" y="${height - 8}" text-anchor="end">${escapeHtml(endLabel)}</text>
+    </svg>
   `;
 }
 
 function renderAccess(payload) {
   state.access = payload;
-  accessCardsEl.classList.remove("empty");
-
-  const publicAccess = payload.public_url
-    ? payload.public_url
-    : payload.public_ip_access_enabled
-      ? `http://服务器IP:${payload.desired_bind_port}`
-      : "仅本地监听";
-  const nginxStatus = payload.nginx_available
-    ? payload.nginx_running
-      ? "已安装并运行"
-      : "已安装，等待 reload"
-    : "未安装";
+  updateHeroAccess();
 
   if (payload.public_url) {
     accessSummaryEl.textContent = payload.restart_pending
-      ? `域名已接入：${payload.public_url}，agent 正在切回仅本地监听`
+      ? `域名已接入：${payload.public_url}，等待 agent 切回本地监听`
       : `域名已接入：${payload.public_url}`;
   } else if (payload.public_ip_access_enabled) {
     accessSummaryEl.textContent = `当前临时开放 IP:${payload.desired_bind_port} 访问`;
@@ -195,56 +420,123 @@ function renderAccess(payload) {
     accessSummaryEl.textContent = "当前只接受本地访问";
   }
 
-  accessCardsEl.innerHTML = `
-    <div class="card">
-      <span>当前监听</span>
-      <strong>${payload.current_bind_host}:${payload.current_bind_port}</strong>
-      <small>${payload.restart_pending ? "重启后会切换到新的监听地址" : "当前生效"}</small>
-    </div>
-    <div class="card">
-      <span>目标监听</span>
-      <strong>${payload.desired_bind_host}:${payload.desired_bind_port}</strong>
-      <small>${payload.public_ip_access_enabled ? "临时允许通过 IP 访问" : "域名完成后仅本地监听"}</small>
-    </div>
-    <div class="card">
-      <span>对外入口</span>
-      <strong>${publicAccess}</strong>
-      <small>${payload.token_configured ? "Bearer Token 已配置" : "未配置访问令牌"}</small>
-    </div>
-    <div class="card">
-      <span>Nginx / Certbot</span>
-      <strong>${nginxStatus}</strong>
-      <small>${payload.https_enabled ? "HTTPS 已就绪" : payload.certbot_available ? "证书将在域名接入时申请" : "未检测到 certbot"}</small>
-    </div>
-  `;
+  const publicEntry = payload.public_url
+    ? payload.public_url
+    : payload.public_ip_access_enabled
+      ? `http://服务器IP:${payload.desired_bind_port}`
+      : "仅本地监听";
+  const nginxStatus = payload.nginx_available
+    ? payload.nginx_running
+      ? "已运行"
+      : "已安装，等待 reload"
+    : "未安装";
+
+  accessCardsEl.className = "metric-grid";
+  accessCardsEl.innerHTML = [
+    metricCard({
+      label: "当前监听",
+      value: `${payload.current_bind_host}:${payload.current_bind_port}`,
+      note: payload.restart_pending ? "重启后会切换到新的监听地址" : "当前生效",
+      tone: "tone-accent",
+    }),
+    metricCard({
+      label: "目标监听",
+      value: `${payload.desired_bind_host}:${payload.desired_bind_port}`,
+      note: payload.public_ip_access_enabled ? "仍允许通过 IP 访问" : "域名完成后只保留本地监听",
+      tone: "tone-green",
+    }),
+    metricCard({
+      label: "对外入口",
+      value: publicEntry,
+      note: payload.token_configured ? "Bearer Token 已配置" : "未配置访问令牌",
+      tone: "tone-amber",
+    }),
+    metricCard({
+      label: "Nginx / Certbot",
+      value: nginxStatus,
+      note: payload.https_enabled
+        ? "HTTPS 已就绪"
+        : payload.certbot_available
+          ? "证书将在域名接入时申请"
+          : "未检测到 certbot",
+      tone: "tone-olive",
+    }),
+  ].join("");
+}
+
+function renderConfig(config) {
+  state.config = config;
+  configAgentNameInput.value = config.agent_name;
+  configAgentRootInput.value = config.agent_root;
+  configPortInput.value = String(config.port);
+  configCertbotEmailInput.value = config.certbot_email || "";
+  configAllowPublicInput.checked = config.allow_public_ip;
+  configAllowRestartInput.checked = config.allow_self_restart;
+
+  configSummaryEl.className = "metric-grid";
+  configSummaryEl.innerHTML = [
+    metricCard({
+      label: "固定根目录",
+      value: config.agent_root,
+      note: "文件操作不会越过这个边界",
+      tone: "tone-accent",
+    }),
+    metricCard({
+      label: "目标监听",
+      value: `${config.desired_bind_host}:${config.desired_bind_port}`,
+      note: `当前运行 ${config.current_bind_host}:${config.current_bind_port}`,
+      tone: "tone-green",
+    }),
+    metricCard({
+      label: "域名状态",
+      value: config.public_domain || "未接入域名",
+      note: config.restart_pending ? "存在待重启生效的参数" : "当前环境文件已同步",
+      tone: "tone-amber",
+    }),
+    metricCard({
+      label: "鉴权 / 证书",
+      value: config.token_configured ? "Bearer Token 已配置" : "未配置 Token",
+      note: config.certbot_email || "未设置 Certbot 邮箱",
+      tone: "tone-olive",
+    }),
+  ].join("");
 }
 
 function renderFiles(payload) {
-  filesEl.classList.remove("empty");
-  pathInput.value = payload.current_path;
   state.currentPath = payload.current_path;
   state.parentPath = payload.parent_path;
-  activePathLabel.textContent = payload.current_path;
+  state.showHidden = payload.show_hidden;
+  pathInput.value = payload.current_path;
+  showHiddenToggle.checked = payload.show_hidden;
+  activePathLabel.textContent = payload.show_hidden
+    ? `${payload.current_path} · 已显示隐藏文件`
+    : `${payload.current_path} · 默认隐藏点文件`;
+
+  if (state.selectedEntry && !payload.entries.some((entry) => entry.path === state.selectedEntry.path)) {
+    state.selectedEntry = null;
+  }
 
   if (!payload.entries.length) {
-    filesEl.innerHTML = `<div class="empty">目录为空</div>`;
+    setFilesPlaceholder(payload.show_hidden ? "目录为空" : "目录为空，或当前只有隐藏文件");
     return;
   }
 
+  filesEl.className = "file-list";
   filesEl.innerHTML = payload.entries
-    .map(
-      (entry) => `
-      <div class="file-row ${state.selectedEntry?.path === entry.path ? "selected" : ""}" data-path="${entry.path}" data-type="${entry.file_type}">
-        <div>
-          <strong>${entry.name}</strong>
-          <small>${entry.mode} · ${formatTimestamp(entry.modified_epoch)}</small>
+    .map((entry) => {
+      const selected = state.selectedEntry?.path === entry.path ? "selected" : "";
+      return `
+        <div class="file-row ${selected}" data-path="${escapeHtml(entry.path)}" data-type="${escapeHtml(entry.file_type)}" data-name="${escapeHtml(entry.name)}">
+          <div class="file-main">
+            <strong>${escapeHtml(entry.name)}</strong>
+            <small>${escapeHtml(entry.mode)} · ${escapeHtml(formatTimestamp(entry.modified_epoch))}</small>
+          </div>
+          <span class="file-pill">${escapeHtml(fileTypeLabel(entry.file_type))}</span>
+          <span>${escapeHtml(formatBytes(entry.size))}</span>
+          <span class="path-cell">${escapeHtml(entry.path)}</span>
         </div>
-        <span>${entry.file_type}</span>
-        <span>${formatBytes(entry.size)}</span>
-        <span>${entry.path}</span>
-      </div>
-    `
-    )
+      `;
+    })
     .join("");
 
   filesEl.querySelectorAll(".file-row").forEach((row) => {
@@ -252,12 +544,9 @@ function renderFiles(payload) {
       state.selectedEntry = {
         path: row.dataset.path,
         type: row.dataset.type,
-        name: row.querySelector("strong").textContent,
+        name: row.dataset.name,
       };
       renderFiles(payload);
-      if (row.dataset.type === "directory") {
-        pathInput.value = row.dataset.path;
-      }
     });
 
     row.addEventListener("dblclick", async () => {
@@ -270,48 +559,76 @@ function renderFiles(payload) {
   });
 }
 
+async function loadResourcesSection() {
+  const [snapshotResult, historyResult] = await Promise.allSettled([
+    request("/api/resources"),
+    request("/api/resources/history"),
+  ]);
+
+  if (snapshotResult.status === "fulfilled") {
+    renderResources(snapshotResult.value);
+  } else {
+    setResourcesPlaceholder(snapshotResult.reason.message);
+    throw snapshotResult.reason;
+  }
+
+  if (historyResult.status === "fulfilled") {
+    renderResourceChart(historyResult.value);
+  } else {
+    setChartPlaceholder(historyResult.reason.message);
+    throw historyResult.reason;
+  }
+}
+
 async function loadAccess() {
   const payload = await request("/api/access");
   renderAccess(payload);
 }
 
-async function refreshDashboard() {
-  clearStatus();
-  const requestedPath = pathInput.value || state.currentPath || "/";
+async function loadConfig() {
+  const payload = await request("/api/config");
+  renderConfig(payload);
+}
 
-  const [resourcesResult, filesResult, accessResult] = await Promise.allSettled([
-    request("/api/resources"),
-    request(`/api/files?path=${encodeURIComponent(requestedPath)}`),
-    request("/api/access"),
-  ]);
-
-  if (resourcesResult.status === "fulfilled") {
-    renderResources(resourcesResult.value);
-  } else {
-    resourcesEl.classList.add("empty");
-    resourcesEl.textContent = resourcesResult.reason.message;
-    showStatus(resourcesResult.reason.message, "error");
-  }
-
-  if (filesResult.status === "fulfilled") {
-    renderFiles(filesResult.value);
-  } else {
-    filesEl.classList.add("empty");
-    filesEl.textContent = "目录加载失败";
-    showStatus(filesResult.reason.message, "error");
-  }
-
-  if (accessResult.status === "fulfilled") {
-    renderAccess(accessResult.value);
-  } else {
+async function refreshSettings() {
+  const [accessResult, configResult] = await Promise.allSettled([loadAccess(), loadConfig()]);
+  if (accessResult.status === "rejected") {
     setAccessPlaceholder(accessResult.reason.message);
-    showStatus(accessResult.reason.message, "error");
+    throw accessResult.reason;
+  }
+  if (configResult.status === "rejected") {
+    setConfigPlaceholder(configResult.reason.message);
+    throw configResult.reason;
   }
 }
 
 async function loadFiles() {
-  const payload = await request(`/api/files?path=${encodeURIComponent(pathInput.value || "/")}`);
+  const payload = await request(buildFilesUrl(pathInput.value || state.currentPath || "/"));
   renderFiles(payload);
+}
+
+async function refreshDashboard({ includeFiles = true } = {}) {
+  const tasks = [loadResourcesSection()];
+  if (includeFiles) {
+    tasks.push(loadFiles());
+  }
+  const results = await Promise.allSettled(tasks);
+  const failed = results.find((result) => result.status === "rejected");
+  if (failed?.status === "rejected") {
+    throw failed.reason;
+  }
+}
+
+async function refreshAll({ includeFiles = true } = {}) {
+  clearStatus();
+  const results = await Promise.allSettled([
+    refreshDashboard({ includeFiles }),
+    refreshSettings(),
+  ]);
+  const firstFailure = results.find((result) => result.status === "rejected");
+  if (firstFailure?.status === "rejected") {
+    showStatus(firstFailure.reason.message, "error");
+  }
 }
 
 function goUp() {
@@ -333,11 +650,12 @@ async function uploadFile() {
   formData.append("file", file);
 
   try {
-    await request(`/api/files/upload?path=${encodeURIComponent(pathInput.value || "/")}`, {
+    await request(`/api/files/upload?path=${encodeURIComponent(pathInput.value || state.currentPath || "/")}`, {
       method: "POST",
       body: formData,
     });
     uploadInput.value = "";
+    filePickerLabel.textContent = "选择文件";
     showStatus(`已上传 ${file.name}`, "success");
     await loadFiles();
   } catch (error) {
@@ -377,19 +695,17 @@ async function renameSelected() {
     return;
   }
 
-  const newPath = joinPath(pathInput.value || state.currentPath, nextName);
-
   try {
     await request("/api/files/rename", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         old_path: state.selectedEntry.path,
-        new_path: newPath,
+        new_path: joinPath(pathInput.value || state.currentPath, nextName),
       }),
     });
-    showStatus(`已重命名为 ${nextName}`, "success");
     state.selectedEntry = null;
+    showStatus(`已重命名为 ${nextName}`, "success");
     await loadFiles();
   } catch (error) {
     showStatus(error.message, "error");
@@ -411,8 +727,8 @@ async function deleteSelected() {
     await request(`/api/files?path=${encodeURIComponent(state.selectedEntry.path)}`, {
       method: "DELETE",
     });
-    showStatus(`已删除 ${state.selectedEntry.name}`, "success");
     state.selectedEntry = null;
+    showStatus(`已删除 ${state.selectedEntry.name}`, "success");
     await loadFiles();
   } catch (error) {
     showStatus(error.message, "error");
@@ -473,11 +789,47 @@ async function configureDomain(event) {
     domainInput.value = "";
     showStatus(
       payload.restart_scheduled
-        ? `域名已通过 nginx 接入：${payload.public_url}。agent 将自动切回仅本地监听，请随后改用域名访问。`
+        ? `域名已接入：${payload.public_url}。agent 将自动切回仅本地监听。`
         : `域名已接入：${payload.public_url}`,
       "success"
     );
-    loadAccess().catch(() => {});
+    await refreshSettings().catch(() => {});
+  } catch (error) {
+    showStatus(error.message, "error");
+  }
+}
+
+async function saveConfig(event) {
+  event.preventDefault();
+  const nextPort = Number(configPortInput.value);
+  if (!Number.isInteger(nextPort) || nextPort < 1 || nextPort > 65535) {
+    showStatus("监听端口必须是 1-65535 之间的整数", "error");
+    return;
+  }
+
+  try {
+    const payload = await request("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agent_name: configAgentNameInput.value.trim(),
+        agent_root: configAgentRootInput.value.trim(),
+        port: nextPort,
+        allow_public_ip: configAllowPublicInput.checked,
+        certbot_email: configCertbotEmailInput.value.trim(),
+        allow_self_restart: configAllowRestartInput.checked,
+      }),
+    });
+    renderConfig(payload.config);
+    await loadAccess().catch(() => {});
+    showStatus(
+      payload.restart_scheduled
+        ? "固定参数已保存，agent 正在重启应用新参数"
+        : payload.restart_required
+          ? "固定参数已保存，等待你手动重启 agent 生效"
+          : "固定参数已保存",
+      payload.restart_required ? "info" : "success"
+    );
   } catch (error) {
     showStatus(error.message, "error");
   }
@@ -491,10 +843,10 @@ async function saveToken() {
   }
 
   window.sessionStorage.setItem(TOKEN_STORAGE_KEY, nextToken);
+  tokenInput.value = "";
+  syncAuthPanel(false);
   try {
-    tokenInput.value = "";
-    syncAuthPanel(false);
-    await refreshDashboard();
+    await refreshAll();
     showStatus("访问令牌已生效", "success");
   } catch (error) {
     window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
@@ -503,17 +855,36 @@ async function saveToken() {
   }
 }
 
+function clearProtectedViews(message) {
+  setResourcesPlaceholder(message);
+  setChartPlaceholder(message);
+  setFilesPlaceholder(message);
+  setAccessPlaceholder(message);
+  setConfigPlaceholder(message);
+}
+
 function clearToken() {
   window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+  state.access = null;
+  state.config = null;
+  state.selectedEntry = null;
   syncAuthPanel(true);
-  setAccessPlaceholder("输入访问令牌后可查看当前接入状态");
+  clearProtectedViews("输入访问令牌后即可继续操作");
   showStatus("已清除当前会话令牌", "info");
 }
 
-refreshButton.addEventListener("click", () => refreshDashboard().catch((error) => showStatus(error.message, "error")));
+refreshButton.addEventListener("click", () => refreshAll().catch((error) => showStatus(error.message, "error")));
 loadFilesButton.addEventListener("click", () => loadFiles().catch((error) => showStatus(error.message, "error")));
 goUpButton.addEventListener("click", goUp);
+showHiddenToggle.addEventListener("change", () => {
+  state.showHidden = showHiddenToggle.checked;
+  state.selectedEntry = null;
+  loadFiles().catch((error) => showStatus(error.message, "error"));
+});
 uploadButton.addEventListener("click", uploadFile);
+uploadInput.addEventListener("change", () => {
+  filePickerLabel.textContent = uploadInput.files[0]?.name || "选择文件";
+});
 createDirButton.addEventListener("click", createDirectory);
 renameButton.addEventListener("click", renameSelected);
 deleteButton.addEventListener("click", deleteSelected);
@@ -521,30 +892,41 @@ downloadButton.addEventListener("click", downloadSelected);
 saveTokenButton.addEventListener("click", saveToken);
 clearTokenButton.addEventListener("click", clearToken);
 domainForm.addEventListener("submit", configureDomain);
+configForm.addEventListener("submit", saveConfig);
 pathInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
     event.preventDefault();
     loadFiles().catch((error) => showStatus(error.message, "error"));
   }
 });
+tokenInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    saveToken().catch((error) => showStatus(error.message, "error"));
+  }
+});
+viewTabs.forEach((button) => {
+  button.addEventListener("click", () => {
+    setView(button.dataset.view);
+    if (button.dataset.view === "settings" && (!state.access || !state.config)) {
+      refreshSettings().catch((error) => showStatus(error.message, "error"));
+    }
+  });
+});
+window.addEventListener("hashchange", () => setView(getViewFromHash()));
 
 async function boot() {
+  setView(getViewFromHash());
   try {
     await loadHealth();
     await loadAgent();
     if (!state.authEnabled || getToken()) {
-      await refreshDashboard();
+      await refreshAll();
     } else {
-      resourcesEl.textContent = "输入访问令牌后即可读取本机资源。";
-      filesEl.textContent = "输入访问令牌后即可浏览目录。";
-      setAccessPlaceholder("输入访问令牌后可查看当前接入状态");
+      clearProtectedViews("输入访问令牌后即可读取本机信息");
     }
   } catch (error) {
-    resourcesEl.classList.add("empty");
-    resourcesEl.textContent = error.message;
-    filesEl.classList.add("empty");
-    filesEl.textContent = "初始化失败";
-    setAccessPlaceholder("初始化失败");
+    clearProtectedViews("初始化失败");
     showStatus(error.message, "error");
   }
 }
@@ -552,8 +934,9 @@ async function boot() {
 boot();
 window.setInterval(() => {
   if (!state.authEnabled || getToken()) {
-    request("/api/resources")
-      .then(renderResources)
-      .catch(() => {});
+    refreshDashboard({ includeFiles: false }).catch(() => {});
+    if (state.activeView === "settings") {
+      loadAccess().catch(() => {});
+    }
   }
 }, 15000);

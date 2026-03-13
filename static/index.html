@@ -7,18 +7,29 @@
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <main class="layout">
-      <section class="panel hero">
-        <div>
-          <p class="eyebrow">Python + FastAPI Agent</p>
-          <h1>单机文件与资源 Agent</h1>
-          <p class="muted">
-            直接部署到目标服务器，本地查看资源信息并执行文件操作。默认建议只监听
-            <code>127.0.0.1</code>，后续通过域名和反向代理对外提供访问。
-          </p>
+    <main class="app-shell">
+      <header class="panel hero">
+        <div class="hero-top">
+          <div class="hero-copy">
+            <p class="eyebrow">Python + FastAPI Agent</p>
+            <h1>单机文件与资源 Agent</h1>
+            <p class="muted">
+              直接部署到目标服务器，本地读取资源和文件。默认保持临时
+              <code>IP:3000</code> 访问，域名接入完成后再切回本地监听。
+            </p>
+          </div>
+
+          <nav class="view-switch" aria-label="页面切换">
+            <button id="view-dashboard" class="view-tab is-active" data-view="dashboard">
+              仪表盘
+            </button>
+            <button id="view-settings" class="view-tab" data-view="settings">
+              配置
+            </button>
+          </nav>
         </div>
 
-        <section id="agent-summary" class="summary-grid">
+        <section id="agent-summary" class="summary-strip">
           <div class="summary-card">
             <span>Agent</span>
             <strong id="agent-name">加载中</strong>
@@ -30,8 +41,8 @@
             <small>单机本地模式</small>
           </div>
           <div class="summary-card">
-            <span>根目录</span>
-            <strong id="agent-root">/</strong>
+            <span>访问入口</span>
+            <strong id="agent-entry">等待接入状态</strong>
             <small id="agent-auth">鉴权状态检测中</small>
           </div>
         </section>
@@ -46,70 +57,163 @@
             <button id="clear-token" class="secondary">清除令牌</button>
           </div>
         </section>
-      </section>
+      </header>
 
-      <section class="grid">
-        <article class="panel">
+      <div id="status" class="status hidden"></div>
+
+      <section id="dashboard-view" class="view is-active">
+        <article class="panel section-panel resource-panel">
           <div class="section-head">
             <div>
+              <p class="section-kicker">Runtime</p>
               <h2>资源概览</h2>
-              <p class="muted">本机状态每次刷新都会同步读取。</p>
+              <p class="muted">上方是当前状态，下方曲线保留最近一段时间的资源变化。</p>
             </div>
-            <button id="refresh-dashboard" class="secondary">刷新</button>
+            <div class="section-actions">
+              <span id="chart-range" class="ghost-chip">等待数据</span>
+              <button id="refresh-dashboard" class="secondary">刷新</button>
+            </div>
           </div>
-          <div id="status" class="status hidden"></div>
-          <div id="resources" class="cards empty">正在等待 agent 信息</div>
 
-          <div class="section-head access-head">
-            <div>
-              <h3>域名接入</h3>
-              <p id="access-summary" class="muted">正在读取接入状态</p>
+          <div id="resources" class="metric-grid empty">正在等待 agent 信息</div>
+
+          <div class="chart-panel">
+            <div class="chart-head">
+              <div>
+                <h3>资源变化</h3>
+                <p id="chart-caption" class="muted">输入访问令牌后即可查看趋势图</p>
+              </div>
+              <div id="chart-legend" class="legend"></div>
             </div>
+            <div id="resource-chart" class="chart empty">暂无趋势数据</div>
           </div>
-          <div id="access-cards" class="cards empty">输入访问令牌后可查看当前接入状态</div>
-          <form id="domain-form" class="domain-form">
-            <input
-              id="domain-input"
-              placeholder="panel.example.com"
-              spellcheck="false"
-              autocomplete="off"
-            />
-            <button id="configure-domain" type="submit">接入域名并启用 HTTPS</button>
-          </form>
-          <p class="muted footnote">
-            配置成功后，agent 会自动切回仅本地监听。请确保域名 A/AAAA 记录已指向当前服务器，并且
-            当前 nginx 可以继续占用 80/443。
-          </p>
         </article>
 
-        <article class="panel">
+        <article class="panel section-panel files-panel">
           <div class="section-head">
             <div>
+              <p class="section-kicker">Files</p>
               <h2>文件浏览</h2>
               <p id="active-path" class="muted">尚未加载目录</p>
             </div>
             <button id="go-up" class="secondary">上一级</button>
           </div>
 
-          <div class="section-head files-head">
-            <h3>当前目录</h3>
+          <div class="file-header">
             <div class="path-bar">
               <input id="path-input" value="/" spellcheck="false" />
               <button id="load-files" class="secondary">打开</button>
             </div>
+            <label class="toggle">
+              <input id="show-hidden-toggle" type="checkbox" />
+              <span>显示隐藏文件</span>
+            </label>
           </div>
 
           <div class="toolbar">
-            <input id="upload-input" type="file" />
+            <label class="file-picker secondary">
+              <input id="upload-input" type="file" />
+              <span>选择文件</span>
+            </label>
             <button id="upload-button">上传到当前目录</button>
             <button id="create-dir-button" class="secondary">新建目录</button>
             <button id="rename-button" class="secondary">重命名所选</button>
-            <button id="delete-button" class="secondary danger">删除所选</button>
             <button id="download-button" class="secondary">下载所选</button>
+            <button id="delete-button" class="secondary danger">删除所选</button>
           </div>
 
+          <div class="list-head">
+            <span>名称 / 权限</span>
+            <span>类型</span>
+            <span>大小</span>
+            <span>路径</span>
+          </div>
           <div id="files" class="file-list empty">暂无目录内容</div>
         </article>
+      </section>
+
+      <section id="settings-view" class="view hidden">
+        <div class="settings-grid">
+          <article class="panel section-panel">
+            <div class="section-head">
+              <div>
+                <p class="section-kicker">Access</p>
+                <h2>域名接入</h2>
+                <p id="access-summary" class="muted">正在读取接入状态</p>
+              </div>
+            </div>
+            <div id="access-cards" class="metric-grid empty">输入访问令牌后可查看当前接入状态</div>
+
+            <form id="domain-form" class="settings-form compact-form">
+              <label class="field span-2">
+                <span>域名</span>
+                <input
+                  id="domain-input"
+                  placeholder="panel.example.com"
+                  spellcheck="false"
+                  autocomplete="off"
+                />
+              </label>
+              <button id="configure-domain" type="submit">接入域名并启用 HTTPS</button>
+            </form>
+
+            <p class="muted footnote">
+              提交前请确认域名 A/AAAA 记录已经指向当前服务器，并且现有
+              <code>nginx</code> 仍然占用 <code>80/443</code>。
+            </p>
+          </article>
+
+          <article class="panel section-panel">
+            <div class="section-head">
+              <div>
+                <p class="section-kicker">Config</p>
+                <h2>固定参数</h2>
+                <p class="muted">保存后会写入环境文件，涉及运行期的参数重启后生效。</p>
+              </div>
+            </div>
+
+            <div id="config-summary" class="metric-grid empty">输入访问令牌后可查看固定参数。</div>
+
+            <form id="config-form" class="settings-form">
+              <label class="field">
+                <span>Agent 名称</span>
+                <input id="config-agent-name" spellcheck="false" />
+              </label>
+
+              <label class="field">
+                <span>监听端口</span>
+                <input id="config-port" type="number" min="1" max="65535" />
+              </label>
+
+              <label class="field span-2">
+                <span>根目录</span>
+                <input id="config-agent-root" spellcheck="false" />
+              </label>
+
+              <label class="field span-2">
+                <span>Certbot 邮箱</span>
+                <input
+                  id="config-certbot-email"
+                  type="email"
+                  placeholder="可选，用于证书续期通知"
+                  spellcheck="false"
+                />
+              </label>
+
+              <label class="toggle card-toggle">
+                <input id="config-allow-public" type="checkbox" />
+                <span>允许通过 IP:端口 临时访问</span>
+              </label>
+
+              <label class="toggle card-toggle">
+                <input id="config-allow-restart" type="checkbox" />
+                <span>允许 Agent 自动重启应用参数</span>
+              </label>
+
+              <button id="save-config" type="submit">保存固定参数</button>
+            </form>
+          </article>
+        </div>
       </section>
     </main>
 
