@@ -62,6 +62,24 @@
 sudo bash scripts/install_agent.sh
 ```
 
+频繁测试时，建议直接用统一入口脚本：
+
+```bash
+bash scripts/agentctl.sh quick
+```
+
+常用命令：
+
+```bash
+bash scripts/agentctl.sh full-install
+bash scripts/agentctl.sh redeploy
+bash scripts/agentctl.sh quick
+bash scripts/agentctl.sh restart
+bash scripts/agentctl.sh status
+bash scripts/agentctl.sh logs 120
+bash scripts/agentctl.sh info
+```
+
 安装脚本会自动完成下面这些事：
 
 - 安装 Python 运行环境、nginx 和 certbot

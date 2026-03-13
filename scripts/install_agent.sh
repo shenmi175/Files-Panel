@@ -13,14 +13,18 @@ NGINX_SITES_ENABLED_DIR="/etc/nginx/sites-enabled"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+INSTALL_SYSTEM_PACKAGES="${INSTALL_SYSTEM_PACKAGES:-1}"
+SYNC_PYTHON_DEPS="${SYNC_PYTHON_DEPS:-1}"
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "请使用 root 运行安装脚本" >&2
   exit 1
 fi
 
-apt-get update
-apt-get install -y python3 python3-venv python3-pip nginx certbot python3-certbot-nginx
+if [[ "$INSTALL_SYSTEM_PACKAGES" == "1" ]]; then
+  apt-get update
+  apt-get install -y python3 python3-venv python3-pip nginx certbot python3-certbot-nginx
+fi
 
 install -d -m 755 "$APP_DIR" "$ENV_DIR" "$STATE_DIR"
 
@@ -32,8 +36,13 @@ cp -a "$PROJECT_DIR/requirements.txt" "$APP_DIR/"
 cp -a "$PROJECT_DIR/.env.example" "$APP_DIR/"
 cp -a "$PROJECT_DIR/systemd/$SERVICE_NAME.service" "/etc/systemd/system/$SERVICE_NAME.service"
 
-python3 -m venv "$APP_DIR/.venv"
-"$APP_DIR/.venv/bin/pip" install -r "$APP_DIR/requirements.txt"
+if [[ ! -x "$APP_DIR/.venv/bin/python" ]]; then
+  python3 -m venv "$APP_DIR/.venv"
+fi
+
+if [[ "$SYNC_PYTHON_DEPS" == "1" ]]; then
+  "$APP_DIR/.venv/bin/pip" install -r "$APP_DIR/requirements.txt"
+fi
 
 read_env_value() {
   local key="$1"
