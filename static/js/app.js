@@ -6,6 +6,7 @@ import {
   getViewFromHash,
   request,
   setDashboardPanel,
+  setLogLevel,
   setView,
   showStatus,
   state,
@@ -173,6 +174,18 @@ function wireEvents() {
   dom.logsRefreshButton.addEventListener("click", () =>
     loadLogsSection({ reset: true }).catch((error) => showStatus(error.message, "error"))
   );
+  dom.logLevelTabs.forEach((button) => {
+    button.addEventListener("click", () => {
+      if (state.logLevel === button.dataset.level) {
+        return;
+      }
+      setLogLevel(button.dataset.level);
+      resetLogsState();
+      if (state.activeView === "logs") {
+        loadLogsSection({ reset: true }).catch((error) => showStatus(error.message, "error"));
+      }
+    });
+  });
   dom.loadFilesButton.addEventListener("click", () => loadFiles().catch((error) => showStatus(error.message, "error")));
   dom.goUpButton.addEventListener("click", goUp);
   dom.showHiddenToggle.addEventListener("change", () => {
@@ -222,6 +235,7 @@ function wireEvents() {
 
 async function boot() {
   setDashboardPanel(state.activeDashboardPanel);
+  setLogLevel(state.logLevel);
   setView(getViewFromHash());
   resetLogsState();
   try {

@@ -17,7 +17,8 @@ async def get_docker_status() -> DockerStatusResponse:
 
 @router.get("/logs", response_model=LogsResponse)
 async def get_runtime_logs(
-    limit: int = Query(default=120, ge=20, le=400),
+    limit: int = Query(default=200, ge=20, le=200),
     cursor: str | None = Query(default=None),
+    level: str = Query(default="info"),
 ) -> LogsResponse:
-    return runtime_service.get_runtime_logs(limit=limit, cursor=cursor)
+    return runtime_service.get_runtime_logs(limit=limit, cursor=cursor, level=level)

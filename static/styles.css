@@ -743,6 +743,30 @@ h3 {
   flex-wrap: wrap;
 }
 
+.log-level-switch {
+  margin-top: 16px;
+  display: inline-flex;
+  gap: 8px;
+  padding: 6px;
+  width: fit-content;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.log-level-tab {
+  min-width: 100px;
+  padding-inline: 16px;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+}
+
+.log-level-tab.is-active {
+  background: var(--text);
+  color: white;
+}
+
 .log-stream {
   margin-top: 16px;
   min-height: 520px;
@@ -908,12 +932,14 @@ h3 {
   }
 
   .dashboard-panel-switch,
-  .view-switch {
+  .view-switch,
+  .log-level-switch {
     width: 100%;
   }
 
   .dashboard-panel-tab,
-  .view-tab {
+  .view-tab,
+  .log-level-tab {
     flex: 1 1 0;
     min-width: 0;
   }

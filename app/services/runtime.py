@@ -11,6 +11,8 @@ from app.services.common import command_available, utc_now
 
 
 COMMAND_TIMEOUT_SECONDS = 8
+MAX_LOG_LINES = 200
+ALLOWED_LOG_LEVELS = {"info", "warning", "error"}
 
 
 def run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
@@ -55,6 +57,38 @@ def journal_timestamp_to_iso(raw_value: object) -> str:
         return datetime.fromtimestamp(microseconds / 1_000_000, tz=timezone.utc).isoformat()
     except (TypeError, ValueError, OSError):
         return utc_now()
+
+
+def normalize_log_level(level: str | None) -> str:
+    normalized = (level or "info").strip().lower()
+    if normalized not in ALLOWED_LOG_LEVELS:
+        return "info"
+    return normalized
+
+
+def priority_to_level(priority: object) -> str:
+    try:
+        numeric = int(str(priority))
+    except (TypeError, ValueError):
+        return "info"
+
+    if numeric <= 3:
+        return "error"
+    if numeric == 4:
+        return "warning"
+    return "info"
+
+
+def log_matches_level(priority: object, level_filter: str) -> bool:
+    return priority_to_level(priority) == level_filter
+
+
+def journal_priority_range(level_filter: str) -> str:
+    if level_filter == "error":
+        return "0..3"
+    if level_filter == "warning":
+        return "4..4"
+    return "5..7"
 
 
 def get_docker_status() -> DockerStatusResponse:
@@ -139,13 +173,21 @@ def get_docker_status() -> DockerStatusResponse:
     )
 
 
-def get_runtime_logs(*, limit: int = 120, cursor: str | None = None) -> LogsResponse:
+def get_runtime_logs(
+    *,
+    limit: int = MAX_LOG_LINES,
+    cursor: str | None = None,
+    level: str = "info",
+) -> LogsResponse:
     service_name = SETTINGS.agent_service_name
+    level_filter = normalize_log_level(level)
+    safe_limit = max(20, min(limit, MAX_LOG_LINES))
     if not service_name:
         return LogsResponse(
             available=False,
             service_name=None,
             cursor=None,
+            level_filter=level_filter,
             message="未配置 agent service 名称",
             lines=[],
         )
@@ -155,6 +197,7 @@ def get_runtime_logs(*, limit: int = 120, cursor: str | None = None) -> LogsResp
             available=False,
             service_name=service_name,
             cursor=None,
+            level_filter=level_filter,
             message="系统未安装 journalctl",
             lines=[],
         )
@@ -166,11 +209,13 @@ def get_runtime_logs(*, limit: int = 120, cursor: str | None = None) -> LogsResp
         "--no-pager",
         "-o",
         "json",
+        "--priority",
+        journal_priority_range(level_filter),
     ]
     if cursor:
         command.extend(["--after-cursor", cursor])
     else:
-        command.extend(["-n", str(limit)])
+        command.extend(["-n", str(safe_limit)])
 
     try:
         result = run_command(command)
@@ -179,6 +224,7 @@ def get_runtime_logs(*, limit: int = 120, cursor: str | None = None) -> LogsResp
             available=False,
             service_name=service_name,
             cursor=cursor,
+            level_filter=level_filter,
             message=str(exc),
             lines=[],
         )
@@ -188,6 +234,7 @@ def get_runtime_logs(*, limit: int = 120, cursor: str | None = None) -> LogsResp
             available=False,
             service_name=service_name,
             cursor=cursor,
+            level_filter=level_filter,
             message=(result.stderr or result.stdout).strip() or "读取日志失败",
             lines=[],
         )
@@ -203,6 +250,10 @@ def get_runtime_logs(*, limit: int = 120, cursor: str | None = None) -> LogsResp
         if current_cursor:
             next_cursor = current_cursor
 
+        priority = item.get("PRIORITY")
+        if not log_matches_level(priority, level_filter):
+            continue
+
         pid: int | None = None
         with suppress(TypeError, ValueError):
             pid = int(str(item.get("_PID")))
@@ -212,20 +263,22 @@ def get_runtime_logs(*, limit: int = 120, cursor: str | None = None) -> LogsResp
                 cursor=current_cursor,
                 timestamp=journal_timestamp_to_iso(item.get("__REALTIME_TIMESTAMP")),
                 message=message,
-                priority=str(item.get("PRIORITY")) if item.get("PRIORITY") is not None else None,
+                level=priority_to_level(priority),
+                priority=str(priority) if priority is not None else None,
                 pid=pid,
                 unit=str(item.get("_SYSTEMD_UNIT") or item.get("SYSLOG_IDENTIFIER") or service_name),
             )
         )
 
-    if cursor and len(entries) > limit:
-        entries = entries[-limit:]
+    if len(entries) > safe_limit:
+        entries = entries[-safe_limit:]
         next_cursor = entries[-1].cursor or next_cursor
 
     return LogsResponse(
         available=True,
         service_name=service_name,
         cursor=next_cursor,
-        message=None if entries else "暂无新的日志",
+        level_filter=level_filter,
+        message=None if entries else f"{level_filter} 级别暂无新的日志",
         lines=entries,
     )

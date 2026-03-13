@@ -16,6 +16,7 @@ export const state = {
   logsLoaded: false,
   logsCursor: null,
   logLines: [],
+  logLevel: "info",
 };
 
 export const dom = {
@@ -73,6 +74,7 @@ export const dom = {
   logsSummaryEl: document.getElementById("logs-summary"),
   logsCursorEl: document.getElementById("logs-cursor"),
   logsOutputEl: document.getElementById("logs-output"),
+  logLevelTabs: document.querySelectorAll(".log-level-tab"),
   viewTabs: document.querySelectorAll(".view-tab"),
 };
 
@@ -349,6 +351,13 @@ export function setLogsPlaceholder(message) {
   dom.logsCursorEl.textContent = "游标未建立";
   dom.logsOutputEl.className = "log-stream empty";
   dom.logsOutputEl.textContent = message;
+}
+
+export function setLogLevel(level) {
+  state.logLevel = level;
+  dom.logLevelTabs.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.level === level);
+  });
 }
 
 export function setAccessPlaceholder(message) {

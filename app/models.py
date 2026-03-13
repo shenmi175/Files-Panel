@@ -171,6 +171,7 @@ class LogEntry(BaseModel):
     cursor: str | None
     timestamp: str
     message: str
+    level: str
     priority: str | None = None
     pid: int | None = None
     unit: str | None = None
@@ -180,6 +181,7 @@ class LogsResponse(BaseModel):
     available: bool
     service_name: str | None
     cursor: str | None
+    level_filter: str
     message: str | None = None
     lines: list[LogEntry]
 

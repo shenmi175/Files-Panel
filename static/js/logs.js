@@ -7,9 +7,6 @@ import {
 } from "./shared.js";
 
 
-const MAX_LOG_LINES = 320;
-
-
 function renderLogLine(line) {
   return `
     <div class="log-line">
@@ -49,13 +46,13 @@ function renderLogs(payload, { append = false } = {}) {
   const nextLines = append
     ? [...state.logLines, ...payload.lines]
     : [...payload.lines];
-  state.logLines = nextLines.slice(-MAX_LOG_LINES);
+  state.logLines = nextLines.slice(-200);
   state.logsCursor = payload.cursor || state.logsCursor;
   state.logsLoaded = true;
 
   dom.logsSummaryEl.textContent = payload.message
     ? payload.message
-    : `已加载 ${state.logLines.length} 条日志`;
+    : `${payload.level_filter.toUpperCase()} · 最近 ${state.logLines.length} / 200 条`;
   dom.logsCursorEl.textContent = state.logsCursor ? "游标已建立" : "游标未建立";
 
   if (!state.logLines.length) {
@@ -82,7 +79,8 @@ export function resetLogsState() {
 
 export async function loadLogsSection({ reset = false } = {}) {
   const params = new URLSearchParams();
-  params.set("limit", reset || !state.logsCursor ? "160" : "100");
+  params.set("limit", "200");
+  params.set("level", state.logLevel);
   if (!reset && state.logsCursor) {
     params.set("cursor", state.logsCursor);
   }
