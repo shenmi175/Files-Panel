@@ -46,6 +46,7 @@ const configAllowPublicInput = document.getElementById("config-allow-public");
 const configAllowRestartInput = document.getElementById("config-allow-restart");
 const filesEl = document.getElementById("files");
 const activePathLabel = document.getElementById("active-path");
+const pathBreadcrumbsEl = document.getElementById("path-breadcrumbs");
 const pathInput = document.getElementById("path-input");
 const loadFilesButton = document.getElementById("load-files");
 const goUpButton = document.getElementById("go-up");
@@ -93,6 +94,13 @@ function formatError(payload) {
     return payload.detail.map((item) => item.msg).join("; ");
   }
   return payload?.detail || payload?.error || "request failed";
+}
+
+function normalizeFeatureError(error, featureName) {
+  if (error?.message !== "Not Found") {
+    return error?.message || `${featureName} 加载失败`;
+  }
+  return `${featureName} 接口未找到。当前运行中的 agent 还是旧版本，请执行 systemctl restart files-agent 后再刷新页面。`;
 }
 
 async function request(path, options = {}) {
@@ -177,6 +185,11 @@ function joinPath(basePath, nextName) {
   return normalizedBase === "/" ? `/${nextName}` : `${normalizedBase}/${nextName}`;
 }
 
+function navigateToPath(targetPath) {
+  pathInput.value = targetPath;
+  return loadFiles();
+}
+
 function fileTypeLabel(type) {
   switch (type) {
     case "directory":
@@ -187,6 +200,17 @@ function fileTypeLabel(type) {
       return "文件";
     default:
       return "其他";
+  }
+}
+
+function fileTypeGlyph(type) {
+  switch (type) {
+    case "directory":
+      return "[DIR]";
+    case "symlink":
+      return "[LNK]";
+    default:
+      return "[FIL]";
   }
 }
 
@@ -275,6 +299,7 @@ function setChartPlaceholder(message) {
 function setFilesPlaceholder(message) {
   filesEl.className = "file-list empty";
   filesEl.textContent = message;
+  pathBreadcrumbsEl.innerHTML = "";
 }
 
 function setAccessPlaceholder(message) {
@@ -310,33 +335,53 @@ async function loadAgent() {
 }
 
 function renderResources(snapshot) {
+  const cpuCount = Number.isFinite(Number(snapshot.cpu_count)) ? Number(snapshot.cpu_count) : null;
+  const loadRatioPercent = Number.isFinite(Number(snapshot.load_ratio_percent))
+    ? Number(snapshot.load_ratio_percent)
+    : null;
+  const memoryUsedPercent = Number.isFinite(snapshot.memory?.used_percent)
+    ? snapshot.memory.used_percent
+    : snapshot.memory?.total_mb
+      ? (snapshot.memory.used_mb / snapshot.memory.total_mb) * 100
+      : null;
+  const diskPercentValue =
+    typeof snapshot.root_disk?.used_percent === "string"
+      ? parseFloat(snapshot.root_disk.used_percent)
+      : snapshot.root_disk?.used_percent;
+  const diskUsedPercent = Number.isFinite(diskPercentValue) ? Number(diskPercentValue) : null;
   resourcesEl.className = "metric-grid";
   resourcesEl.innerHTML = [
     metricCard({
       label: "主机与运行时",
       value: snapshot.hostname,
-      note: `${snapshot.uptime} · ${snapshot.cpu_count} vCPU`,
+      note: `${snapshot.uptime} · ${cpuCount ? `${cpuCount} vCPU` : "重启 agent 后显示 CPU 信息"}`,
       tone: "tone-accent",
     }),
     metricCard({
       label: "Load",
       value: `${snapshot.load_average.one.toFixed(2)} / ${snapshot.load_average.five.toFixed(2)} / ${snapshot.load_average.fifteen.toFixed(2)}`,
-      note: `1m / 5m / 15m，当前约 ${formatPercent(snapshot.load_ratio_percent)}`,
-      meter: snapshot.load_ratio_percent,
+      note:
+        loadRatioPercent === null
+          ? "1m / 5m / 15m，占比需重启 agent 后显示"
+          : `1m / 5m / 15m，当前约 ${formatPercent(loadRatioPercent)}`,
+      meter: loadRatioPercent,
       tone: "tone-olive",
     }),
     metricCard({
       label: "内存",
       value: `${snapshot.memory.used_mb} / ${snapshot.memory.total_mb} MB`,
       note: `available ${snapshot.memory.available_mb} MB`,
-      meter: snapshot.memory.used_percent,
+      meter: memoryUsedPercent,
       tone: "tone-green",
     }),
     metricCard({
       label: "磁盘",
       value: `${snapshot.root_disk.used} / ${snapshot.root_disk.total}`,
-      note: `${snapshot.root_disk.mount_point} · ${formatPercent(snapshot.root_disk.used_percent)}`,
-      meter: snapshot.root_disk.used_percent,
+      note:
+        diskUsedPercent === null
+          ? `${snapshot.root_disk.mount_point} · 占比待刷新`
+          : `${snapshot.root_disk.mount_point} · ${formatPercent(diskUsedPercent)}`,
+      meter: diskUsedPercent,
       tone: "tone-amber",
     }),
   ].join("");
@@ -502,6 +547,56 @@ function renderConfig(config) {
   ].join("");
 }
 
+function buildBreadcrumbs(currentPath, rootPath) {
+  const root = rootPath || "/";
+  const crumbs = [];
+  const rootLabel =
+    root === "/" ? "/" : root.split("/").filter(Boolean).slice(-1)[0] || root;
+  crumbs.push({ label: rootLabel, path: root });
+
+  if (currentPath === root) {
+    return crumbs;
+  }
+
+  const relative = currentPath.startsWith(root)
+    ? currentPath.slice(root.length).replace(/^\/+/, "")
+    : currentPath.replace(/^\/+/, "");
+  const parts = relative ? relative.split("/").filter(Boolean) : [];
+  let cursor = root === "/" ? "" : root;
+  parts.forEach((part) => {
+    cursor = cursor === "/" || cursor === "" ? `/${part}` : `${cursor}/${part}`;
+    crumbs.push({ label: part, path: cursor });
+  });
+  return crumbs;
+}
+
+function renderBreadcrumbs(currentPath, rootPath) {
+  const crumbs = buildBreadcrumbs(currentPath, rootPath);
+  pathBreadcrumbsEl.innerHTML = crumbs
+    .map(
+      (crumb, index) => `
+        <button
+          class="crumb ${index === crumbs.length - 1 ? "is-current" : ""}"
+          type="button"
+          data-path="${escapeHtml(crumb.path)}"
+        >
+          ${escapeHtml(crumb.label)}
+        </button>
+      `
+    )
+    .join('<span class="crumb-sep">/</span>');
+
+  pathBreadcrumbsEl.querySelectorAll(".crumb").forEach((button) => {
+    button.addEventListener("click", async () => {
+      if (button.classList.contains("is-current")) {
+        return;
+      }
+      state.selectedEntry = null;
+      await navigateToPath(button.dataset.path);
+    });
+  });
+}
+
 function renderFiles(payload) {
   state.currentPath = payload.current_path;
   state.parentPath = payload.parent_path;
@@ -511,6 +606,7 @@ function renderFiles(payload) {
   activePathLabel.textContent = payload.show_hidden
     ? `${payload.current_path} · 已显示隐藏文件`
     : `${payload.current_path} · 默认隐藏点文件`;
+  renderBreadcrumbs(payload.current_path, payload.root_path);
 
   if (state.selectedEntry && !payload.entries.some((entry) => entry.path === state.selectedEntry.path)) {
     state.selectedEntry = null;
@@ -528,7 +624,16 @@ function renderFiles(payload) {
       return `
         <div class="file-row ${selected}" data-path="${escapeHtml(entry.path)}" data-type="${escapeHtml(entry.file_type)}" data-name="${escapeHtml(entry.name)}">
           <div class="file-main">
-            <strong>${escapeHtml(entry.name)}</strong>
+            <button
+              type="button"
+              class="entry-link ${entry.file_type === "directory" ? "is-directory" : ""}"
+              data-path="${escapeHtml(entry.path)}"
+              data-type="${escapeHtml(entry.file_type)}"
+              data-name="${escapeHtml(entry.name)}"
+            >
+              <span class="entry-glyph">${fileTypeGlyph(entry.file_type)}</span>
+              <strong>${escapeHtml(entry.name)}</strong>
+            </button>
             <small>${escapeHtml(entry.mode)} · ${escapeHtml(formatTimestamp(entry.modified_epoch))}</small>
           </div>
           <span class="file-pill">${escapeHtml(fileTypeLabel(entry.file_type))}</span>
@@ -550,11 +655,10 @@ function renderFiles(payload) {
     });
 
     row.addEventListener("dblclick", async () => {
-      if (row.dataset.type !== "directory") {
-        return;
+      if (row.dataset.type === "directory") {
+        state.selectedEntry = null;
+        await navigateToPath(row.dataset.path);
       }
-      pathInput.value = row.dataset.path;
-      await loadFiles();
     });
   });
 }
@@ -575,8 +679,7 @@ async function loadResourcesSection() {
   if (historyResult.status === "fulfilled") {
     renderResourceChart(historyResult.value);
   } else {
-    setChartPlaceholder(historyResult.reason.message);
-    throw historyResult.reason;
+    setChartPlaceholder(normalizeFeatureError(historyResult.reason, "资源趋势"));
   }
 }
 
@@ -597,8 +700,7 @@ async function refreshSettings() {
     throw accessResult.reason;
   }
   if (configResult.status === "rejected") {
-    setConfigPlaceholder(configResult.reason.message);
-    throw configResult.reason;
+    setConfigPlaceholder(normalizeFeatureError(configResult.reason, "固定参数"));
   }
 }
 
@@ -635,8 +737,7 @@ function goUp() {
   if (!state.parentPath) {
     return;
   }
-  pathInput.value = state.parentPath;
-  loadFiles().catch((error) => showStatus(error.message, "error"));
+  navigateToPath(state.parentPath).catch((error) => showStatus(error.message, "error"));
 }
 
 async function uploadFile() {

@@ -231,6 +231,12 @@ h3 {
   flex-wrap: wrap;
 }
 
+.path-stack {
+  flex: 1 1 560px;
+  display: grid;
+  gap: 10px;
+}
+
 .auth-row input {
   flex: 1 1 280px;
 }
@@ -402,6 +408,40 @@ h3 {
   gap: 10px;
 }
 
+.breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.crumb {
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--accent);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.crumb:hover {
+  box-shadow: none;
+}
+
+.crumb.is-current {
+  background: rgba(29, 92, 77, 0.12);
+  color: var(--text);
+}
+
+.crumb-sep {
+  color: rgba(102, 112, 103, 0.7);
+}
+
 .toggle {
   display: inline-flex;
   align-items: center;
@@ -488,6 +528,37 @@ h3 {
 .file-main {
   display: grid;
   gap: 4px;
+}
+
+.entry-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  box-shadow: none;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.entry-link:hover {
+  transform: none;
+  box-shadow: none;
+  color: var(--accent);
+}
+
+.entry-link.is-directory strong {
+  color: var(--accent);
+}
+
+.entry-glyph {
+  font-family: "IBM Plex Mono", "Noto Sans Mono CJK SC", monospace;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--muted);
 }
 
 .file-main strong {

@@ -100,9 +100,12 @@
           </div>
 
           <div class="file-header">
-            <div class="path-bar">
-              <input id="path-input" value="/" spellcheck="false" />
-              <button id="load-files" class="secondary">打开</button>
+            <div class="path-stack">
+              <div id="path-breadcrumbs" class="breadcrumbs"></div>
+              <div class="path-bar">
+                <input id="path-input" value="/" spellcheck="false" />
+                <button id="load-files" class="secondary">打开</button>
+              </div>
             </div>
             <label class="toggle">
               <input id="show-hidden-toggle" type="checkbox" />
