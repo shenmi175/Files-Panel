@@ -49,6 +49,10 @@ body {
   gap: 18px;
 }
 
+code {
+  font-family: "IBM Plex Mono", "Noto Sans Mono CJK SC", monospace;
+}
+
 .eyebrow {
   margin: 0 0 10px;
   text-transform: uppercase;
@@ -70,15 +74,26 @@ span {
   color: var(--muted);
 }
 
-.server-form,
+.summary-grid,
+.auth-row,
+.domain-form,
 .path-bar {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+}
+
+.auth-row {
+  grid-template-columns: 1fr auto auto;
 }
 
 .path-bar {
   grid-template-columns: 1fr auto;
+}
+
+.domain-form {
+  grid-template-columns: 1fr auto;
+  margin-top: 14px;
 }
 
 input,
@@ -123,29 +138,21 @@ button.secondary {
   margin-top: 20px;
 }
 
-.server-list,
+.access-head {
+  margin-top: 20px;
+}
+
 .cards,
 .file-list {
   display: grid;
   gap: 12px;
 }
 
-.server-item {
-  width: 100%;
-  text-align: left;
+.summary-card {
+  padding: 16px;
   background: white;
-  color: var(--text);
-}
-
-.server-item.active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-}
-
-.server-item span,
-.server-item strong,
-.server-item small {
-  display: block;
+  border-radius: 18px;
+  border: 1px solid rgba(216, 205, 184, 0.65);
 }
 
 .cards {
@@ -167,7 +174,7 @@ button.secondary {
 
 .file-row {
   display: grid;
-  grid-template-columns: 1fr 110px 110px;
+  grid-template-columns: minmax(0, 1.2fr) 110px 110px minmax(0, 160px);
   align-items: center;
   cursor: pointer;
 }
@@ -193,6 +200,20 @@ button.secondary {
   gap: 10px;
   flex-wrap: wrap;
   margin-bottom: 14px;
+}
+
+.auth-panel {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border-radius: 18px;
+  border: 1px solid rgba(216, 205, 184, 0.7);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.footnote {
+  margin-top: 12px;
+  line-height: 1.5;
 }
 
 .status {
@@ -230,9 +251,12 @@ button.secondary {
     grid-template-columns: 1fr;
   }
 
-  .server-form,
+  .summary-grid,
+  .auth-row,
+  .domain-form,
   .toolbar {
-    grid-template-columns: 1fr;
+    display: flex;
+    flex-direction: column;
   }
 
   .file-row {

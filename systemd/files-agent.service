@@ -1,0 +1,20 @@
+[Unit]
+Description=Files Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+WorkingDirectory=/opt/files-agent
+EnvironmentFile=/etc/files-agent/files-agent.env
+ExecStart=/opt/files-agent/.venv/bin/python -m app
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+
+import secrets
+
+
+def main() -> None:
+    print(secrets.token_urlsafe(32))
+
+
+if __name__ == "__main__":
+    main()

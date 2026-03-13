@@ -3,71 +3,106 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Files Panel</title>
+    <title>Files Agent</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <main class="layout">
       <section class="panel hero">
         <div>
-          <p class="eyebrow">Rust + Docker</p>
-          <h1>Ubuntu 资源与文件面板</h1>
+          <p class="eyebrow">Python + FastAPI Agent</p>
+          <h1>单机文件与资源 Agent</h1>
           <p class="muted">
-            支持 SSH 密码或私钥登录，提供基础资源查看、目录浏览和常用文件操作。
+            直接部署到目标服务器，本地查看资源信息并执行文件操作。默认建议只监听
+            <code>127.0.0.1</code>，后续通过域名和反向代理对外提供访问。
           </p>
         </div>
-        <form id="server-form" class="server-form">
-          <input name="name" placeholder="服务器名称" required />
-          <input name="host" placeholder="IP / Host" required />
-          <input name="port" type="number" placeholder="22" value="22" required />
-          <input name="username" placeholder="ubuntu" required />
-          <select id="auth-method" name="auth_method">
-            <option value="password">密码登录</option>
-            <option value="private_key">私钥登录</option>
-          </select>
-          <input id="password-input" name="password" type="password" placeholder="SSH 密码" />
-          <input
-            id="private-key-input"
-            name="private_key_path"
-            placeholder="/root/.ssh/id_rsa"
-            class="hidden"
-          />
-          <button type="submit">添加服务器</button>
-        </form>
+
+        <section id="agent-summary" class="summary-grid">
+          <div class="summary-card">
+            <span>Agent</span>
+            <strong id="agent-name">加载中</strong>
+            <small id="agent-hostname">-</small>
+          </div>
+          <div class="summary-card">
+            <span>运行用户</span>
+            <strong id="agent-user">-</strong>
+            <small>单机本地模式</small>
+          </div>
+          <div class="summary-card">
+            <span>根目录</span>
+            <strong id="agent-root">/</strong>
+            <small id="agent-auth">鉴权状态检测中</small>
+          </div>
+        </section>
+
+        <section id="auth-panel" class="auth-panel hidden">
+          <p class="muted">
+            当前 agent 启用了访问令牌。令牌只保存在浏览器当前会话，不会写入服务器数据文件。
+          </p>
+          <div class="auth-row">
+            <input id="token-input" type="password" placeholder="输入 AGENT_TOKEN" />
+            <button id="save-token">连接 Agent</button>
+            <button id="clear-token" class="secondary">清除令牌</button>
+          </div>
+        </section>
       </section>
 
       <section class="grid">
         <article class="panel">
           <div class="section-head">
-            <h2>服务器</h2>
-            <button id="refresh-servers" class="secondary">刷新</button>
+            <div>
+              <h2>资源概览</h2>
+              <p class="muted">本机状态每次刷新都会同步读取。</p>
+            </div>
+            <button id="refresh-dashboard" class="secondary">刷新</button>
           </div>
-          <div id="servers" class="server-list"></div>
+          <div id="status" class="status hidden"></div>
+          <div id="resources" class="cards empty">正在等待 agent 信息</div>
+
+          <div class="section-head access-head">
+            <div>
+              <h3>域名接入</h3>
+              <p id="access-summary" class="muted">正在读取接入状态</p>
+            </div>
+          </div>
+          <div id="access-cards" class="cards empty">输入访问令牌后可查看当前接入状态</div>
+          <form id="domain-form" class="domain-form">
+            <input
+              id="domain-input"
+              placeholder="panel.example.com"
+              spellcheck="false"
+              autocomplete="off"
+            />
+            <button id="configure-domain" type="submit">接入域名并启用 HTTPS</button>
+          </form>
+          <p class="muted footnote">
+            配置成功后，agent 会自动切回仅本地监听。请确保域名 A/AAAA 记录已指向当前服务器，并且
+            80/443 已放行。
+          </p>
         </article>
 
         <article class="panel">
           <div class="section-head">
             <div>
-              <h2>详情</h2>
-              <p id="active-server" class="muted">尚未选择服务器</p>
+              <h2>文件浏览</h2>
+              <p id="active-path" class="muted">尚未加载目录</p>
             </div>
-            <button id="test-connection" class="secondary">测试 SSH</button>
+            <button id="go-up" class="secondary">上一级</button>
           </div>
 
-          <div id="status" class="status hidden"></div>
-          <div id="resources" class="cards empty">选择左侧服务器后加载资源信息</div>
-
           <div class="section-head files-head">
-            <h3>文件</h3>
+            <h3>当前目录</h3>
             <div class="path-bar">
-              <input id="path-input" value="/" />
-              <button id="load-files" class="secondary">浏览</button>
+              <input id="path-input" value="/" spellcheck="false" />
+              <button id="load-files" class="secondary">打开</button>
             </div>
           </div>
 
           <div class="toolbar">
             <input id="upload-input" type="file" />
             <button id="upload-button">上传到当前目录</button>
+            <button id="create-dir-button" class="secondary">新建目录</button>
             <button id="rename-button" class="secondary">重命名所选</button>
             <button id="delete-button" class="secondary danger">删除所选</button>
             <button id="download-button" class="secondary">下载所选</button>
