@@ -8,7 +8,7 @@
 - 不落地保存任何服务器密码
 - 代码仓库不包含运行期凭据
 - 安装后先临时开放 `IP:3000`，域名接入成功后再自动切回仅本地监听
-- 通过面板输入域名即可生成 Caddy 反代和 HTTPS 证书配置
+- 通过面板输入域名即可生成 nginx 反代和 HTTPS 证书配置
 
 ## 当前能力
 
@@ -26,11 +26,12 @@
 - 查看当前访问状态
   - 当前监听地址
   - 域名状态
-  - Caddy 状态
+  - nginx / certbot 状态
 - 面板内接入域名
   - 输入域名
-  - 自动写入 Caddy 配置
-  - 自动 reload Caddy
+  - 自动写入 nginx 配置
+  - 自动 reload nginx
+  - 自动通过 certbot 申请 HTTPS 证书
   - 配置完成后把 agent 切回 `127.0.0.1`
 - 可选 Bearer Token 鉴权
   - Token 通过环境变量注入
@@ -41,6 +42,7 @@
 - 后端：Python + FastAPI + Uvicorn
 - 资源采集：`psutil`
 - 前端：静态 HTML/CSS/JS
+- 反代与证书：`nginx + certbot`
 - 部署：`systemd`
 
 ## 快速启动
@@ -52,7 +54,7 @@
 - Python 3.12+
 - Ubuntu/Linux
 - 目标域名的 `A/AAAA` 记录可以指向当前服务器
-- 80/443 可以对外放行，供 Caddy 申请和续期证书
+- 80/443 可以对外放行，供 nginx 和 certbot 使用
 
 安装：
 
@@ -62,12 +64,13 @@ sudo bash scripts/install_agent.sh
 
 安装脚本会自动完成下面这些事：
 
-- 安装 Python 运行环境和 Caddy
+- 安装 Python 运行环境、nginx 和 certbot
 - 创建 `/opt/files-agent`
 - 创建 Python 虚拟环境并安装依赖
 - 安装 `systemd` 服务
 - 首次自动生成并保存 `AGENT_TOKEN`
 - 初始写入 `HOST=0.0.0.0`，便于你先通过 `IP:3000` 临时访问
+- 启用 nginx，并在你在面板里接入域名时自动写入站点配置和申请证书
 
 安装完成后，脚本会直接打印两项信息：
 
@@ -80,7 +83,7 @@ sudo bash scripts/install_agent.sh
 1. 打开 http://服务器IP:3000
 2. 输入安装脚本打印出的 AGENT_TOKEN
 3. 在面板中填入域名
-4. 等待 Caddy 配置完成
+4. 等待 nginx 配置和 certbot 证书申请完成
 5. 后续改用 https://你的域名 访问
 ```
 
@@ -121,12 +124,18 @@ ALLOW_SELF_RESTART=0 \
   - 默认 `/etc/files-agent/files-agent.env`
 - `STATE_DIR`
   - 默认 `/var/lib/files-agent`
-- `CADDYFILE_PATH`
-  - 默认 `/etc/caddy/Caddyfile`
+- `NGINX_SITES_AVAILABLE_DIR`
+  - 默认 `/etc/nginx/sites-available`
+- `NGINX_SITES_ENABLED_DIR`
+  - 默认 `/etc/nginx/sites-enabled`
 - `AGENT_SERVICE_NAME`
   - 默认 `files-agent`
-- `CADDY_SERVICE_NAME`
-  - 默认 `caddy`
+- `NGINX_SERVICE_NAME`
+  - 默认 `nginx`
+- `CERTBOT_EMAIL`
+  - 可选
+  - 如果设置，certbot 会用该邮箱申请证书
+  - 如果不设置，会以无邮箱模式注册
 - `ALLOW_SELF_RESTART`
   - 默认 `1`
   - 域名接入后是否自动重启 agent 以切回本地监听
@@ -154,7 +163,7 @@ ALLOW_SELF_RESTART=0 \
 - 应用目录：`/opt/files-agent`
 - 环境文件：`/etc/files-agent/files-agent.env`
 - systemd unit：`/etc/systemd/system/files-agent.service`
-- Caddy 配置：`/etc/caddy/Caddyfile`
+- nginx 站点目录：`/etc/nginx/sites-available` 和 `/etc/nginx/sites-enabled`
 
 安装脚本生成的环境文件会包含：
 
@@ -166,9 +175,11 @@ AGENT_ROOT=/
 AGENT_TOKEN=<自动生成>
 ENV_FILE_PATH=/etc/files-agent/files-agent.env
 STATE_DIR=/var/lib/files-agent
-CADDYFILE_PATH=/etc/caddy/Caddyfile
+NGINX_SITES_AVAILABLE_DIR=/etc/nginx/sites-available
+NGINX_SITES_ENABLED_DIR=/etc/nginx/sites-enabled
 AGENT_SERVICE_NAME=files-agent
-CADDY_SERVICE_NAME=caddy
+NGINX_SERVICE_NAME=nginx
+CERTBOT_EMAIL=
 ALLOW_SELF_RESTART=1
 ```
 
@@ -182,7 +193,7 @@ ALLOW_SELF_RESTART=1
   - 安装脚本自动生成 `AGENT_TOKEN`
   - 临时只在初始化阶段开放 `IP:3000`
   - 域名接入成功后自动切回仅本地监听
-  - 通过 Caddy 统一暴露 HTTPS 域名入口
+  - 通过 nginx 统一暴露 HTTPS 域名入口
 
 ## 目录
 

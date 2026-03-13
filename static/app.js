@@ -179,8 +179,8 @@ function renderAccess(payload) {
     : payload.public_ip_access_enabled
       ? `http://服务器IP:${payload.desired_bind_port}`
       : "仅本地监听";
-  const caddyStatus = payload.caddy_available
-    ? payload.caddy_running
+  const nginxStatus = payload.nginx_available
+    ? payload.nginx_running
       ? "已安装并运行"
       : "已安装，等待 reload"
     : "未安装";
@@ -212,9 +212,9 @@ function renderAccess(payload) {
       <small>${payload.token_configured ? "Bearer Token 已配置" : "未配置访问令牌"}</small>
     </div>
     <div class="card">
-      <span>Caddy</span>
-      <strong>${caddyStatus}</strong>
-      <small>${payload.public_url ? "HTTPS 证书由 Caddy 自动管理" : "域名接入后自动启用 HTTPS"}</small>
+      <span>Nginx / Certbot</span>
+      <strong>${nginxStatus}</strong>
+      <small>${payload.https_enabled ? "HTTPS 已就绪" : payload.certbot_available ? "证书将在域名接入时申请" : "未检测到 certbot"}</small>
     </div>
   `;
 }
@@ -473,7 +473,7 @@ async function configureDomain(event) {
     domainInput.value = "";
     showStatus(
       payload.restart_scheduled
-        ? `域名已接入：${payload.public_url}。agent 将自动切回仅本地监听，请随后改用域名访问。`
+        ? `域名已通过 nginx 接入：${payload.public_url}。agent 将自动切回仅本地监听，请随后改用域名访问。`
         : `域名已接入：${payload.public_url}`,
       "success"
     );

@@ -7,8 +7,9 @@ ENV_DIR="/etc/files-agent"
 ENV_FILE="$ENV_DIR/files-agent.env"
 STATE_DIR="/var/lib/files-agent"
 SERVICE_NAME="files-agent"
-CADDY_SERVICE_NAME="caddy"
-CADDYFILE_PATH="/etc/caddy/Caddyfile"
+NGINX_SERVICE_NAME="nginx"
+NGINX_SITES_AVAILABLE_DIR="/etc/nginx/sites-available"
+NGINX_SITES_ENABLED_DIR="/etc/nginx/sites-enabled"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -19,7 +20,7 @@ if [[ "${EUID}" -ne 0 ]]; then
 fi
 
 apt-get update
-apt-get install -y python3 python3-venv python3-pip caddy
+apt-get install -y python3 python3-venv python3-pip nginx certbot python3-certbot-nginx
 
 install -d -m 755 "$APP_DIR" "$ENV_DIR" "$STATE_DIR"
 
@@ -58,6 +59,7 @@ if [[ -z "$ROOT_VALUE" ]]; then
 fi
 
 PUBLIC_DOMAIN_VALUE="$(read_env_value PUBLIC_DOMAIN)"
+CERTBOT_EMAIL_VALUE="$(read_env_value CERTBOT_EMAIL)"
 HOST_VALUE="0.0.0.0"
 if [[ -n "$PUBLIC_DOMAIN_VALUE" ]]; then
   HOST_VALUE="127.0.0.1"
@@ -72,9 +74,11 @@ AGENT_ROOT=$ROOT_VALUE
 AGENT_TOKEN=$TOKEN
 ENV_FILE_PATH=$ENV_FILE
 STATE_DIR=$STATE_DIR
-CADDYFILE_PATH=$CADDYFILE_PATH
+NGINX_SITES_AVAILABLE_DIR=$NGINX_SITES_AVAILABLE_DIR
+NGINX_SITES_ENABLED_DIR=$NGINX_SITES_ENABLED_DIR
 AGENT_SERVICE_NAME=$SERVICE_NAME
-CADDY_SERVICE_NAME=$CADDY_SERVICE_NAME
+NGINX_SERVICE_NAME=$NGINX_SERVICE_NAME
+CERTBOT_EMAIL=$CERTBOT_EMAIL_VALUE
 ALLOW_SELF_RESTART=1
 EOF
 
@@ -85,7 +89,7 @@ fi
 chmod 600 "$ENV_FILE"
 
 systemctl daemon-reload
-systemctl enable --now "$CADDY_SERVICE_NAME"
+systemctl enable --now "$NGINX_SERVICE_NAME"
 systemctl enable --now "$SERVICE_NAME"
 
 SERVER_IP="$(hostname -I | awk '{print $1}')"
@@ -94,6 +98,10 @@ echo
 echo "Files Agent 安装完成"
 echo "临时访问地址: http://${SERVER_IP}:3000"
 echo "AGENT_TOKEN: ${TOKEN}"
+echo "Nginx: 已启用，域名接入时会自动写入站点配置并调用 certbot"
+if [[ -n "$CERTBOT_EMAIL_VALUE" ]]; then
+  echo "Certbot 邮箱: ${CERTBOT_EMAIL_VALUE}"
+fi
 if [[ -n "$PUBLIC_DOMAIN_VALUE" ]]; then
   echo "已保留现有域名配置: https://${PUBLIC_DOMAIN_VALUE}"
 fi

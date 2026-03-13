@@ -41,9 +41,11 @@ class Settings:
     auth_token: str | None
     env_file_path: Path
     state_dir: Path
-    caddyfile_path: Path
+    nginx_sites_available_dir: Path
+    nginx_sites_enabled_dir: Path
     agent_service_name: str | None
-    caddy_service_name: str | None
+    nginx_service_name: str | None
+    certbot_email: str | None
     allow_self_restart: bool
 
 
@@ -68,9 +70,15 @@ def load_settings() -> Settings:
         auth_token=auth_token,
         env_file_path=Path(os.getenv("ENV_FILE_PATH", "/etc/files-agent/files-agent.env")).expanduser(),
         state_dir=Path(os.getenv("STATE_DIR", "/var/lib/files-agent")).expanduser(),
-        caddyfile_path=Path(os.getenv("CADDYFILE_PATH", "/etc/caddy/Caddyfile")).expanduser(),
+        nginx_sites_available_dir=Path(
+            os.getenv("NGINX_SITES_AVAILABLE_DIR", "/etc/nginx/sites-available")
+        ).expanduser(),
+        nginx_sites_enabled_dir=Path(
+            os.getenv("NGINX_SITES_ENABLED_DIR", "/etc/nginx/sites-enabled")
+        ).expanduser(),
         agent_service_name=os.getenv("AGENT_SERVICE_NAME", "files-agent").strip() or None,
-        caddy_service_name=os.getenv("CADDY_SERVICE_NAME", "caddy").strip() or None,
+        nginx_service_name=os.getenv("NGINX_SERVICE_NAME", "nginx").strip() or None,
+        certbot_email=os.getenv("CERTBOT_EMAIL", "").strip() or None,
         allow_self_restart=allow_self_restart,
     )
 
@@ -100,8 +108,10 @@ class AccessStatus(BaseModel):
     public_ip_access_enabled: bool
     domain: str | None
     public_url: str | None
-    caddy_available: bool
-    caddy_running: bool
+    nginx_available: bool
+    nginx_running: bool
+    certbot_available: bool
+    https_enabled: bool
     token_configured: bool
     restart_pending: bool
 
@@ -114,6 +124,7 @@ class DomainSetupResponse(BaseModel):
     message: str
     public_url: str
     desired_bind_host: str
+    https_enabled: bool
     restart_scheduled: bool
 
 
@@ -233,9 +244,11 @@ def default_env_values() -> dict[str, str]:
         "AGENT_TOKEN": SETTINGS.auth_token or "",
         "ENV_FILE_PATH": str(SETTINGS.env_file_path),
         "STATE_DIR": str(SETTINGS.state_dir),
-        "CADDYFILE_PATH": str(SETTINGS.caddyfile_path),
+        "NGINX_SITES_AVAILABLE_DIR": str(SETTINGS.nginx_sites_available_dir),
+        "NGINX_SITES_ENABLED_DIR": str(SETTINGS.nginx_sites_enabled_dir),
         "AGENT_SERVICE_NAME": SETTINGS.agent_service_name or "",
-        "CADDY_SERVICE_NAME": SETTINGS.caddy_service_name or "",
+        "NGINX_SERVICE_NAME": SETTINGS.nginx_service_name or "",
+        "CERTBOT_EMAIL": SETTINGS.certbot_email or "",
         "ALLOW_SELF_RESTART": "1" if SETTINGS.allow_self_restart else "0",
     }
 
@@ -263,9 +276,11 @@ def write_env_file(path: Path, values: dict[str, str]) -> None:
         "AGENT_TOKEN",
         "ENV_FILE_PATH",
         "STATE_DIR",
-        "CADDYFILE_PATH",
+        "NGINX_SITES_AVAILABLE_DIR",
+        "NGINX_SITES_ENABLED_DIR",
         "AGENT_SERVICE_NAME",
-        "CADDY_SERVICE_NAME",
+        "NGINX_SERVICE_NAME",
+        "CERTBOT_EMAIL",
         "ALLOW_SELF_RESTART",
         "PUBLIC_DOMAIN",
     ]
@@ -332,13 +347,71 @@ def normalize_domain(raw_domain: str) -> str:
     return normalized
 
 
-def render_caddyfile(domain: str, upstream_port: int) -> str:
+def site_slug(domain: str) -> str:
+    return domain.replace(".", "-")
+
+
+def nginx_site_paths(domain: str) -> tuple[Path, Path]:
+    file_name = f"files-agent-{site_slug(domain)}.conf"
     return (
-        f"{domain} {{\n"
-        "    encode gzip zstd\n"
-        f"    reverse_proxy 127.0.0.1:{upstream_port}\n"
+        SETTINGS.nginx_sites_available_dir / file_name,
+        SETTINGS.nginx_sites_enabled_dir / file_name,
+    )
+
+
+def render_nginx_site(domain: str, upstream_port: int) -> str:
+    return (
+        "server {\n"
+        "    listen 80;\n"
+        "    listen [::]:80;\n"
+        f"    server_name {domain};\n\n"
+        "    client_max_body_size 2g;\n\n"
+        "    location / {\n"
+        f"        proxy_pass http://127.0.0.1:{upstream_port};\n"
+        "        proxy_http_version 1.1;\n"
+        "        proxy_set_header Host $host;\n"
+        "        proxy_set_header X-Real-IP $remote_addr;\n"
+        "        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n"
+        "        proxy_set_header X-Forwarded-Proto $scheme;\n"
+        "        proxy_set_header Upgrade $http_upgrade;\n"
+        '        proxy_set_header Connection "upgrade";\n'
+        "    }\n"
         "}\n"
     )
+
+
+def certbot_args(domain: str, email: str | None) -> list[str]:
+    command = [
+        "certbot",
+        "--nginx",
+        "-d",
+        domain,
+        "--non-interactive",
+        "--agree-tos",
+        "--redirect",
+        "--keep-until-expiring",
+    ]
+    if email:
+        command.extend(["-m", email])
+    else:
+        command.append("--register-unsafely-without-email")
+    return command
+
+
+def tls_ready_for(domain: str | None, state: dict[str, object]) -> bool:
+    if not domain:
+        return False
+
+    letsencrypt_cert = Path("/etc/letsencrypt/live") / domain / "fullchain.pem"
+    if letsencrypt_cert.exists():
+        return True
+    return bool(state.get("https_enabled"))
+
+
+def remove_nginx_site(domain: str) -> None:
+    site_path, enabled_path = nginx_site_paths(domain)
+    enabled_path.unlink(missing_ok=True)
+    site_path.unlink(missing_ok=True)
 
 
 def schedule_service_restart(service_name: str | None) -> bool:
@@ -365,7 +438,11 @@ def build_access_status() -> AccessStatus:
     desired_host = env_values.get("HOST", SETTINGS.host)
     desired_port = int(env_values.get("PORT", SETTINGS.port))
     domain = state.get("domain") or env_values.get("PUBLIC_DOMAIN") or None
-    public_url = f"https://{domain}" if domain else None
+    https_enabled = tls_ready_for(domain, state)
+    if domain:
+        public_url = f"https://{domain}" if https_enabled else f"http://{domain}"
+    else:
+        public_url = None
 
     return AccessStatus(
         current_bind_host=SETTINGS.host,
@@ -375,8 +452,10 @@ def build_access_status() -> AccessStatus:
         public_ip_access_enabled=desired_host not in {"127.0.0.1", "::1", "localhost"},
         domain=domain,
         public_url=public_url,
-        caddy_available=command_available("caddy"),
-        caddy_running=service_is_active(env_values.get("CADDY_SERVICE_NAME") or SETTINGS.caddy_service_name),
+        nginx_available=command_available("nginx"),
+        nginx_running=service_is_active(env_values.get("NGINX_SERVICE_NAME") or SETTINGS.nginx_service_name),
+        certbot_available=command_available("certbot"),
+        https_enabled=https_enabled,
         token_configured=bool(env_values.get("AGENT_TOKEN")),
         restart_pending=desired_host != SETTINGS.host or desired_port != SETTINGS.port,
     )
@@ -494,44 +573,75 @@ async def get_access_status() -> AccessStatus:
 @app.post("/api/access/domain", response_model=DomainSetupResponse, dependencies=[Depends(require_auth)])
 async def configure_domain_access(request: DomainSetupRequest) -> DomainSetupResponse:
     domain = normalize_domain(request.domain)
-    if not command_available("caddy"):
-        raise HTTPException(status_code=400, detail="caddy is not installed")
+    if not command_available("nginx"):
+        raise HTTPException(status_code=400, detail="nginx is not installed")
+    if not command_available("certbot"):
+        raise HTTPException(status_code=400, detail="certbot is not installed")
     if not command_available("systemctl"):
         raise HTTPException(status_code=400, detail="systemctl is not available")
 
-    pending_caddyfile = SETTINGS.state_dir / "Caddyfile.pending"
+    env_values = {**default_env_values(), **read_env_file(SETTINGS.env_file_path)}
+    previous_state = load_access_state()
+    previous_domain = previous_state.get("domain")
+    site_path, enabled_path = nginx_site_paths(domain)
+    previous_site_content = site_path.read_text(encoding="utf-8") if site_path.exists() else None
+
     try:
         SETTINGS.state_dir.mkdir(parents=True, exist_ok=True)
-        SETTINGS.caddyfile_path.parent.mkdir(parents=True, exist_ok=True)
+        SETTINGS.nginx_sites_available_dir.mkdir(parents=True, exist_ok=True)
+        SETTINGS.nginx_sites_enabled_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"failed to prepare config paths: {exc}") from exc
 
-    previous_caddyfile = None
-    if SETTINGS.caddyfile_path.exists():
-        previous_caddyfile = SETTINGS.caddyfile_path.read_text(encoding="utf-8")
-
     try:
-        pending_caddyfile.write_text(render_caddyfile(domain, SETTINGS.port), encoding="utf-8")
+        site_path.write_text(render_nginx_site(domain, SETTINGS.port), encoding="utf-8")
+        if not enabled_path.exists() and not enabled_path.is_symlink():
+            enabled_path.symlink_to(site_path)
     except OSError as exc:
-        raise HTTPException(status_code=500, detail=f"failed to write caddy config: {exc}") from exc
-
-    run_command(["caddy", "validate", "--config", str(pending_caddyfile)], "validate caddy config")
+        raise HTTPException(status_code=500, detail=f"failed to write nginx config: {exc}") from exc
 
     try:
-        shutil.copy2(pending_caddyfile, SETTINGS.caddyfile_path)
-        if SETTINGS.caddy_service_name:
-            run_command(["systemctl", "enable", "--now", SETTINGS.caddy_service_name], "enable caddy")
-            run_command(["systemctl", "reload", SETTINGS.caddy_service_name], "reload caddy")
-        else:
-            run_command(["caddy", "reload", "--config", str(SETTINGS.caddyfile_path)], "reload caddy")
+        run_command(["nginx", "-t"], "validate nginx config")
+        run_command(
+            ["systemctl", "enable", "--now", env_values.get("NGINX_SERVICE_NAME") or SETTINGS.nginx_service_name or "nginx"],
+            "enable nginx",
+        )
+        run_command(
+            ["systemctl", "reload", env_values.get("NGINX_SERVICE_NAME") or SETTINGS.nginx_service_name or "nginx"],
+            "reload nginx",
+        )
+        run_command(
+            certbot_args(domain, env_values.get("CERTBOT_EMAIL") or SETTINGS.certbot_email),
+            "issue tls certificate",
+        )
     except HTTPException:
-        if previous_caddyfile is None:
-            SETTINGS.caddyfile_path.unlink(missing_ok=True)
+        if previous_site_content is None:
+            remove_nginx_site(domain)
         else:
-            SETTINGS.caddyfile_path.write_text(previous_caddyfile, encoding="utf-8")
+            site_path.write_text(previous_site_content, encoding="utf-8")
+            if not enabled_path.exists() and not enabled_path.is_symlink():
+                enabled_path.symlink_to(site_path)
+        try:
+            run_command(["nginx", "-t"], "validate nginx rollback")
+            run_command(
+                ["systemctl", "reload", env_values.get("NGINX_SERVICE_NAME") or SETTINGS.nginx_service_name or "nginx"],
+                "reload nginx rollback",
+            )
+        except HTTPException:
+            pass
         raise
 
-    env_values = {**default_env_values(), **read_env_file(SETTINGS.env_file_path)}
+    if previous_domain and previous_domain != domain:
+        remove_nginx_site(str(previous_domain))
+        try:
+            run_command(["nginx", "-t"], "validate nginx cleanup")
+            run_command(
+                ["systemctl", "reload", env_values.get("NGINX_SERVICE_NAME") or SETTINGS.nginx_service_name or "nginx"],
+                "reload nginx cleanup",
+            )
+        except HTTPException:
+            pass
+
     env_values["HOST"] = "127.0.0.1"
     env_values["PORT"] = str(SETTINGS.port)
     env_values["PUBLIC_DOMAIN"] = domain
@@ -541,6 +651,7 @@ async def configure_domain_access(request: DomainSetupRequest) -> DomainSetupRes
             {
                 "domain": domain,
                 "public_url": f"https://{domain}",
+                "https_enabled": True,
                 "configured_at": utc_now(),
             }
         )
@@ -552,9 +663,10 @@ async def configure_domain_access(request: DomainSetupRequest) -> DomainSetupRes
         restart_scheduled = schedule_service_restart(env_values.get("AGENT_SERVICE_NAME") or SETTINGS.agent_service_name)
 
     return DomainSetupResponse(
-        message="domain configured; agent will switch to local-only access after restart",
+        message="domain configured through nginx; agent will switch to local-only access after restart",
         public_url=f"https://{domain}",
         desired_bind_host=env_values["HOST"],
+        https_enabled=True,
         restart_scheduled=restart_scheduled,
     )
 
