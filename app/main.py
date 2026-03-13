@@ -54,6 +54,15 @@ class Settings:
     allow_self_restart: bool
 
 
+@dataclass
+class ResourceRateTracker:
+    timestamp: float
+    net_bytes_recv: int
+    net_bytes_sent: int
+    disk_read_bytes: int
+    disk_write_bytes: int
+
+
 def load_settings() -> Settings:
     host = os.getenv("HOST", "127.0.0.1").strip() or "127.0.0.1"
     port = int(os.getenv("PORT", "3000"))
@@ -147,6 +156,16 @@ class MemoryStats(BaseModel):
     used_percent: float
 
 
+class NetworkStats(BaseModel):
+    download_bps: int
+    upload_bps: int
+
+
+class DiskIOStats(BaseModel):
+    read_bps: int
+    write_bps: int
+
+
 class DiskStats(BaseModel):
     total: str
     used: str
@@ -159,14 +178,18 @@ class ResourceSnapshot(BaseModel):
     hostname: str
     uptime: str
     cpu_count: int
+    cpu_used_percent: float
     load_ratio_percent: float
     load_average: LoadAverage
     memory: MemoryStats
     root_disk: DiskStats
+    network: NetworkStats
+    disk_io: DiskIOStats
 
 
 class ResourceHistoryPoint(BaseModel):
     timestamp: str
+    cpu_used_percent: float
     memory_used_percent: float
     disk_used_percent: float
     load_ratio_percent: float
@@ -639,6 +662,48 @@ def list_directory_entries(target: Path, *, show_hidden: bool) -> list[FileEntry
         raise HTTPException(status_code=403, detail="permission denied") from exc
 
 
+def sample_resource_rates() -> tuple[NetworkStats, DiskIOStats]:
+    net = psutil.net_io_counters()
+    disk_io = psutil.disk_io_counters()
+    now = time.time()
+    tracker = getattr(app.state, "resource_rate_tracker", None)
+
+    if tracker is None:
+        tracker = ResourceRateTracker(
+            timestamp=now,
+            net_bytes_recv=net.bytes_recv if net else 0,
+            net_bytes_sent=net.bytes_sent if net else 0,
+            disk_read_bytes=disk_io.read_bytes if disk_io else 0,
+            disk_write_bytes=disk_io.write_bytes if disk_io else 0,
+        )
+        app.state.resource_rate_tracker = tracker
+        return NetworkStats(download_bps=0, upload_bps=0), DiskIOStats(read_bps=0, write_bps=0)
+
+    elapsed = max(now - tracker.timestamp, 0.001)
+    download_bps = 0
+    upload_bps = 0
+    read_bps = 0
+    write_bps = 0
+
+    if net:
+        download_bps = int(max(net.bytes_recv - tracker.net_bytes_recv, 0) / elapsed)
+        upload_bps = int(max(net.bytes_sent - tracker.net_bytes_sent, 0) / elapsed)
+        tracker.net_bytes_recv = net.bytes_recv
+        tracker.net_bytes_sent = net.bytes_sent
+
+    if disk_io:
+        read_bps = int(max(disk_io.read_bytes - tracker.disk_read_bytes, 0) / elapsed)
+        write_bps = int(max(disk_io.write_bytes - tracker.disk_write_bytes, 0) / elapsed)
+        tracker.disk_read_bytes = disk_io.read_bytes
+        tracker.disk_write_bytes = disk_io.write_bytes
+
+    tracker.timestamp = now
+    return (
+        NetworkStats(download_bps=download_bps, upload_bps=upload_bps),
+        DiskIOStats(read_bps=read_bps, write_bps=write_bps),
+    )
+
+
 def build_resources() -> ResourceSnapshot:
     memory = psutil.virtual_memory()
     disk = psutil.disk_usage(SETTINGS.root_path)
@@ -647,12 +712,15 @@ def build_resources() -> ResourceSnapshot:
     except OSError:
         load_one = load_five = load_fifteen = 0.0
     cpu_count = os.cpu_count() or 1
+    cpu_used_percent = psutil.cpu_percent(interval=None)
     load_ratio_percent = min((load_one / cpu_count) * 100, 100.0)
+    network_stats, disk_io_stats = sample_resource_rates()
 
     return ResourceSnapshot(
         hostname=socket.gethostname(),
         uptime=format_uptime(time.time() - psutil.boot_time()),
         cpu_count=cpu_count,
+        cpu_used_percent=round(cpu_used_percent, 1),
         load_ratio_percent=round(load_ratio_percent, 1),
         load_average=LoadAverage(one=load_one, five=load_five, fifteen=load_fifteen),
         memory=MemoryStats(
@@ -669,6 +737,8 @@ def build_resources() -> ResourceSnapshot:
             used_percent=round(disk.percent, 1),
             mount_point=str(SETTINGS.root_path),
         ),
+        network=network_stats,
+        disk_io=disk_io_stats,
     )
 
 
@@ -679,6 +749,7 @@ def build_history_point(snapshot: ResourceSnapshot | None = None) -> ResourceHis
     current = snapshot or build_resources()
     return ResourceHistoryPoint(
         timestamp=utc_now(),
+        cpu_used_percent=current.cpu_used_percent,
         memory_used_percent=current.memory.used_percent,
         disk_used_percent=current.root_disk.used_percent,
         load_ratio_percent=current.load_ratio_percent,
@@ -717,6 +788,8 @@ async def resource_sampler() -> None:
 
 @app.on_event("startup")
 async def on_startup() -> None:
+    psutil.cpu_percent(interval=None)
+    sample_resource_rates()
     resource_history_store()
     app.state.resource_sampler_task = asyncio.create_task(resource_sampler())
 

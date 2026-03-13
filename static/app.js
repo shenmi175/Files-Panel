@@ -1,6 +1,7 @@
 const TOKEN_STORAGE_KEY = "files_agent_token";
 const CHART_SERIES = [
-  { key: "memory_used_percent", label: "内存", color: "#1d5c4d" },
+  { key: "cpu_used_percent", label: "CPU", color: "#1d5c4d" },
+  { key: "memory_used_percent", label: "内存", color: "#49866f" },
   { key: "disk_used_percent", label: "磁盘", color: "#c57a38" },
   { key: "load_ratio_percent", label: "负载", color: "#6a7b54" },
 ];
@@ -142,15 +143,30 @@ function metricCard({ label, value, note, meter = null, tone = "" }) {
     meter === null ? null : meter <= 0 ? 0 : Math.max(4, Math.min(100, meter));
   return `
     <div class="metric-card ${tone}">
-      <span>${escapeHtml(label)}</span>
-      <strong>${escapeHtml(value)}</strong>
-      <small>${escapeHtml(note)}</small>
-      ${meterWidth === null ? "" : `<div class="meter"><i style="width:${meterWidth}%"></i></div>`}
+      <div class="metric-body">
+        <div class="metric-copy">
+          <span>${escapeHtml(label)}</span>
+          <strong>${escapeHtml(value)}</strong>
+          <small>${escapeHtml(note)}</small>
+        </div>
+        ${
+          meterWidth === null
+            ? ""
+            : `
+              <div class="metric-ring" style="--percent:${meterWidth}">
+                <span>${escapeHtml(formatPercent(meter))}</span>
+              </div>
+            `
+        }
+      </div>
     </div>
   `;
 }
 
 function formatBytes(value) {
+  if (!Number.isFinite(value) || value <= 0) {
+    return "0 B";
+  }
   if (value < 1024) {
     return `${value} B`;
   }
@@ -162,6 +178,10 @@ function formatBytes(value) {
     unitIndex += 1;
   }
   return `${size.toFixed(1)} ${units[unitIndex]}`;
+}
+
+function formatRate(value) {
+  return `${formatBytes(value)}/s`;
 }
 
 function formatTimestamp(epoch) {
@@ -336,6 +356,9 @@ async function loadAgent() {
 
 function renderResources(snapshot) {
   const cpuCount = Number.isFinite(Number(snapshot.cpu_count)) ? Number(snapshot.cpu_count) : null;
+  const cpuUsedPercent = Number.isFinite(Number(snapshot.cpu_used_percent))
+    ? Number(snapshot.cpu_used_percent)
+    : null;
   const loadRatioPercent = Number.isFinite(Number(snapshot.load_ratio_percent))
     ? Number(snapshot.load_ratio_percent)
     : null;
@@ -349,12 +372,31 @@ function renderResources(snapshot) {
       ? parseFloat(snapshot.root_disk.used_percent)
       : snapshot.root_disk?.used_percent;
   const diskUsedPercent = Number.isFinite(diskPercentValue) ? Number(diskPercentValue) : null;
+  const downloadRate = Number.isFinite(Number(snapshot.network?.download_bps))
+    ? Number(snapshot.network.download_bps)
+    : 0;
+  const uploadRate = Number.isFinite(Number(snapshot.network?.upload_bps))
+    ? Number(snapshot.network.upload_bps)
+    : 0;
+  const diskReadRate = Number.isFinite(Number(snapshot.disk_io?.read_bps))
+    ? Number(snapshot.disk_io.read_bps)
+    : 0;
+  const diskWriteRate = Number.isFinite(Number(snapshot.disk_io?.write_bps))
+    ? Number(snapshot.disk_io.write_bps)
+    : 0;
   resourcesEl.className = "metric-grid";
   resourcesEl.innerHTML = [
     metricCard({
       label: "主机与运行时",
       value: snapshot.hostname,
       note: `${snapshot.uptime} · ${cpuCount ? `${cpuCount} vCPU` : "重启 agent 后显示 CPU 信息"}`,
+      tone: "tone-accent",
+    }),
+    metricCard({
+      label: "CPU 利用率",
+      value: cpuUsedPercent === null ? "等待采样" : formatPercent(cpuUsedPercent),
+      note: cpuCount ? `${cpuCount} vCPU · 实时利用率` : "CPU 实时利用率",
+      meter: cpuUsedPercent,
       tone: "tone-accent",
     }),
     metricCard({
@@ -382,6 +424,18 @@ function renderResources(snapshot) {
           ? `${snapshot.root_disk.mount_point} · 占比待刷新`
           : `${snapshot.root_disk.mount_point} · ${formatPercent(diskUsedPercent)}`,
       meter: diskUsedPercent,
+      tone: "tone-amber",
+    }),
+    metricCard({
+      label: "网络吞吐",
+      value: `↓ ${formatRate(downloadRate)} / ↑ ${formatRate(uploadRate)}`,
+      note: "全网卡聚合实时速率",
+      tone: "tone-olive",
+    }),
+    metricCard({
+      label: "磁盘 I/O",
+      value: `读 ${formatRate(diskReadRate)} / 写 ${formatRate(diskWriteRate)}`,
+      note: "块设备聚合实时速率",
       tone: "tone-amber",
     }),
   ].join("");
@@ -427,12 +481,18 @@ function renderResourceChart(payload) {
 
   const lines = CHART_SERIES.map((series) => {
     const polylinePoints = points
-      .map((point, index) => `${x(index)},${y(point[series.key])}`)
+      .map((point, index) => {
+        const value = Number.isFinite(Number(point?.[series.key])) ? Number(point[series.key]) : 0;
+        return `${x(index)},${y(value)}`;
+      })
       .join(" ");
     const lastPoint = points[points.length - 1];
+    const lastValue = Number.isFinite(Number(lastPoint?.[series.key]))
+      ? Number(lastPoint[series.key])
+      : 0;
     return `
       <polyline fill="none" stroke="${series.color}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" points="${polylinePoints}" />
-      <circle cx="${x(points.length - 1)}" cy="${y(lastPoint[series.key])}" r="4.5" fill="${series.color}" />
+      <circle cx="${x(points.length - 1)}" cy="${y(lastValue)}" r="4.5" fill="${series.color}" />
     `;
   }).join("");
 
@@ -644,6 +704,12 @@ function renderFiles(payload) {
     })
     .join("");
 
+  const highlightSelection = () => {
+    filesEl.querySelectorAll(".file-row").forEach((row) => {
+      row.classList.toggle("selected", row.dataset.path === state.selectedEntry?.path);
+    });
+  };
+
   filesEl.querySelectorAll(".file-row").forEach((row) => {
     row.addEventListener("click", () => {
       state.selectedEntry = {
@@ -651,7 +717,7 @@ function renderFiles(payload) {
         type: row.dataset.type,
         name: row.dataset.name,
       };
-      renderFiles(payload);
+      highlightSelection();
     });
 
     row.addEventListener("dblclick", async () => {

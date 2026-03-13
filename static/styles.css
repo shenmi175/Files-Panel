@@ -299,9 +299,20 @@ h3 {
 .metric-card {
   --tone: rgba(29, 92, 77, 0.26);
   padding: 18px;
+  border-color: var(--line-strong);
+}
+
+.metric-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.metric-copy {
+  min-width: 0;
   display: grid;
   gap: 8px;
-  border-color: var(--line-strong);
 }
 
 .metric-card strong {
@@ -315,19 +326,34 @@ h3 {
   line-height: 1.5;
 }
 
-.meter {
-  height: 8px;
-  margin-top: 4px;
+.metric-ring {
+  --ring-size: 78px;
+  width: var(--ring-size);
+  height: var(--ring-size);
+  flex: 0 0 auto;
   border-radius: 999px;
-  background: rgba(33, 47, 40, 0.08);
-  overflow: hidden;
+  position: relative;
+  background: conic-gradient(var(--tone) calc(var(--percent) * 1%), rgba(33, 47, 40, 0.08) 0);
 }
 
-.meter i {
-  display: block;
-  height: 100%;
+.metric-ring::after {
+  content: "";
+  position: absolute;
+  inset: 8px;
   border-radius: inherit;
-  background: var(--tone);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(33, 47, 40, 0.08);
+}
+
+.metric-ring span {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
 }
 
 .tone-accent {
@@ -674,6 +700,10 @@ h3 {
 
   .path-bar {
     grid-template-columns: 1fr;
+  }
+
+  .metric-body {
+    align-items: flex-start;
   }
 
   .list-head {
