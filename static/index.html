@@ -120,10 +120,6 @@
           <div class="file-header">
             <div class="path-stack">
               <div id="path-breadcrumbs" class="breadcrumbs"></div>
-              <div class="path-bar">
-                <input id="path-input" value="/" spellcheck="false" />
-                <button id="load-files" class="secondary">打开</button>
-              </div>
             </div>
             <label class="toggle">
               <input id="show-hidden-toggle" type="checkbox" />
@@ -143,12 +139,6 @@
             <button id="delete-button" class="secondary danger">删除所选</button>
           </div>
 
-          <div class="list-head">
-            <span>名称 / 权限</span>
-            <span>类型</span>
-            <span>大小</span>
-            <span>路径</span>
-          </div>
           <div id="files" class="file-list empty">暂无目录内容</div>
         </article>
       </section>
@@ -209,6 +199,18 @@
               <label class="field span-2">
                 <span>根目录</span>
                 <input id="config-agent-root" spellcheck="false" />
+              </label>
+
+              <label class="field span-2">
+                <span>访问令牌</span>
+                <input
+                  id="config-agent-token"
+                  type="password"
+                  placeholder="留空表示不变，填写后会更新为新令牌"
+                  spellcheck="false"
+                  autocomplete="new-password"
+                />
+                <small class="field-hint">当前不会回显已有 token，避免在页面上泄漏。</small>
               </label>
 
               <label class="field span-2">

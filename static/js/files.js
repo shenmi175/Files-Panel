@@ -2,8 +2,6 @@ import {
   dom,
   escapeHtml,
   fileTypeGlyph,
-  fileTypeLabel,
-  formatBytes,
   formatTimestamp,
   getToken,
   joinPath,
@@ -23,7 +21,7 @@ function buildFilesUrl(targetPath) {
 }
 
 export function navigateToPath(targetPath) {
-  dom.pathInput.value = targetPath;
+  state.currentPath = targetPath || "/";
   return loadFiles();
 }
 
@@ -80,7 +78,6 @@ export function renderFiles(payload) {
   state.currentPath = payload.current_path;
   state.parentPath = payload.parent_path;
   state.showHidden = payload.show_hidden;
-  dom.pathInput.value = payload.current_path;
   dom.showHiddenToggle.checked = payload.show_hidden;
   dom.activePathLabel.textContent = payload.show_hidden
     ? `${payload.current_path} · 已显示隐藏文件`
@@ -109,12 +106,12 @@ export function renderFiles(payload) {
             >
               <span class="entry-glyph">${fileTypeGlyph(entry.file_type)}</span>
               <strong>${escapeHtml(entry.name)}</strong>
+              <span class="entry-meta">
+                <span>${escapeHtml(entry.mode)}</span>
+                <span>${escapeHtml(formatTimestamp(entry.modified_epoch))}</span>
+              </span>
             </button>
-            <small>${escapeHtml(entry.mode)} · ${escapeHtml(formatTimestamp(entry.modified_epoch))}</small>
           </div>
-          <span class="file-pill">${escapeHtml(fileTypeLabel(entry.file_type))}</span>
-          <span>${escapeHtml(formatBytes(entry.size))}</span>
-          <span class="path-cell">${escapeHtml(entry.path)}</span>
         </div>
       `;
     })
@@ -146,7 +143,7 @@ export function renderFiles(payload) {
 }
 
 export async function loadFiles() {
-  const payload = await request(buildFilesUrl(dom.pathInput.value || state.currentPath || "/"));
+  const payload = await request(buildFilesUrl(state.currentPath || "/"));
   state.filesLoaded = true;
   renderFiles(payload);
 }
@@ -169,7 +166,7 @@ export async function uploadFile() {
   formData.append("file", file);
 
   try {
-    await request(`/api/files/upload?path=${encodeURIComponent(dom.pathInput.value || state.currentPath || "/")}`, {
+    await request(`/api/files/upload?path=${encodeURIComponent(state.currentPath || "/")}`, {
       method: "POST",
       body: formData,
     });
@@ -193,7 +190,7 @@ export async function createDirectory() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        path: joinPath(dom.pathInput.value || state.currentPath, nextName),
+        path: joinPath(state.currentPath || "/", nextName),
       }),
     });
     showStatus(`已创建目录 ${nextName}`, "success");
@@ -220,7 +217,7 @@ export async function renameSelected() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         old_path: state.selectedEntry.path,
-        new_path: joinPath(dom.pathInput.value || state.currentPath, nextName),
+        new_path: joinPath(state.currentPath || "/", nextName),
       }),
     });
     state.selectedEntry = null;

@@ -138,6 +138,10 @@ ALLOW_SELF_RESTART=0 \
 - `AGENT_TOKEN`
   - 可选
   - 设置后，除 `/api/health` 和 `/api/agent` 外，其余接口都需要 `Authorization: Bearer <token>`
+- `RESOURCE_SAMPLE_INTERVAL`
+  - 默认 `15`
+  - 可选值 `2 / 5 / 10 / 15`
+  - 控制资源趋势图的后台采样间隔
 - `ENV_FILE_PATH`
   - 默认 `/etc/files-agent/files-agent.env`
 - `STATE_DIR`
@@ -191,6 +195,7 @@ PORT=3000
 AGENT_NAME=prod-01
 AGENT_ROOT=/
 AGENT_TOKEN=<自动生成>
+RESOURCE_SAMPLE_INTERVAL=15
 ENV_FILE_PATH=/etc/files-agent/files-agent.env
 STATE_DIR=/var/lib/files-agent
 NGINX_SITES_AVAILABLE_DIR=/etc/nginx/sites-available

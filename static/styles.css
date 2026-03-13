@@ -41,7 +41,8 @@ code {
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
@@ -76,7 +77,8 @@ button.danger {
   color: var(--danger);
 }
 
-input {
+input,
+select {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -87,7 +89,8 @@ input {
   transition: border-color 140ms ease, box-shadow 140ms ease;
 }
 
-input:focus {
+input:focus,
+select:focus {
   border-color: rgba(29, 92, 77, 0.45);
   box-shadow: 0 0 0 3px rgba(29, 92, 77, 0.08);
 }
@@ -550,13 +553,6 @@ h3 {
   font-size: 12px;
 }
 
-.path-bar {
-  flex: 1 1 520px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-}
-
 .breadcrumbs {
   display: flex;
   flex-wrap: wrap;
@@ -633,24 +629,15 @@ h3 {
   cursor: pointer;
 }
 
-.list-head,
 .file-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) 100px 110px minmax(0, 200px);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
   align-items: center;
 }
 
-.list-head {
-  margin-top: 20px;
-  padding: 0 6px;
-  font-size: 13px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-}
-
 .file-list {
-  margin-top: 10px;
+  margin-top: 18px;
   display: grid;
   gap: 10px;
 }
@@ -675,13 +662,13 @@ h3 {
 }
 
 .file-main {
-  display: grid;
-  gap: 4px;
+  min-width: 0;
 }
 
 .entry-link {
   display: inline-flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 0;
   border: 0;
@@ -716,18 +703,21 @@ h3 {
   word-break: break-word;
 }
 
-.file-pill {
+.entry-meta {
   display: inline-flex;
-  justify-content: center;
-  width: fit-content;
-  padding: 7px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  background: rgba(255, 252, 247, 0.85);
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--muted);
 }
 
-.path-cell {
-  word-break: break-all;
+.entry-meta span {
+  color: inherit;
+}
+
+.field-hint {
+  line-height: 1.5;
 }
 
 .settings-grid {
@@ -910,16 +900,8 @@ h3 {
     align-items: stretch;
   }
 
-  .path-bar {
-    grid-template-columns: 1fr;
-  }
-
   .metric-body {
     align-items: flex-start;
-  }
-
-  .list-head {
-    display: none;
   }
 
   .file-row {

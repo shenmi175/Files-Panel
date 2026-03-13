@@ -11,7 +11,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 STATIC_DIR = BASE_DIR / "static"
 ACCESS_STATE_FILE = "access.json"
 RESOURCE_HISTORY_MAX_POINTS = 96
-RESOURCE_SAMPLE_INTERVAL = 15
+DEFAULT_RESOURCE_SAMPLE_INTERVAL = 15
+RESOURCE_SAMPLE_INTERVAL_CHOICES = (2, 5, 10, 15)
 RESOURCE_SNAPSHOT_CACHE_TTL = 3
 DOMAIN_PATTERN = re.compile(
     r"^(?=.{1,253}$)(?!-)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.(?!-)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$"
@@ -25,6 +26,7 @@ class Settings:
     agent_name: str
     root_path: Path
     auth_token: str | None
+    sample_interval_seconds: int
     env_file_path: Path
     state_dir: Path
     nginx_sites_available_dir: Path
@@ -33,6 +35,22 @@ class Settings:
     nginx_service_name: str | None
     certbot_email: str | None
     allow_self_restart: bool
+
+
+def normalize_resource_sample_interval(
+    raw_value: str | int | None,
+    *,
+    fallback: int = DEFAULT_RESOURCE_SAMPLE_INTERVAL,
+) -> int:
+    if raw_value in {None, ""}:
+        return fallback
+    try:
+        candidate = int(raw_value)
+    except (TypeError, ValueError):
+        return fallback
+    if candidate not in RESOURCE_SAMPLE_INTERVAL_CHOICES:
+        return fallback
+    return candidate
 
 
 def load_settings() -> Settings:
@@ -54,6 +72,9 @@ def load_settings() -> Settings:
         agent_name=os.getenv("AGENT_NAME", socket.gethostname()).strip() or socket.gethostname(),
         root_path=root_path,
         auth_token=auth_token,
+        sample_interval_seconds=normalize_resource_sample_interval(
+            os.getenv("RESOURCE_SAMPLE_INTERVAL"),
+        ),
         env_file_path=Path(os.getenv("ENV_FILE_PATH", "/etc/files-agent/files-agent.env")).expanduser(),
         state_dir=Path(os.getenv("STATE_DIR", "/var/lib/files-agent")).expanduser(),
         nginx_sites_available_dir=Path(

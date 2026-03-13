@@ -9,6 +9,7 @@ export const state = {
   currentPath: "/",
   parentPath: null,
   showHidden: false,
+  resourceSampleInterval: 15,
   activeView: "dashboard",
   activeDashboardPanel: "resources",
   filesLoaded: false,
@@ -45,14 +46,13 @@ export const dom = {
   configAgentNameInput: document.getElementById("config-agent-name"),
   configAgentRootInput: document.getElementById("config-agent-root"),
   configPortInput: document.getElementById("config-port"),
+  configAgentTokenInput: document.getElementById("config-agent-token"),
   configCertbotEmailInput: document.getElementById("config-certbot-email"),
   configAllowPublicInput: document.getElementById("config-allow-public"),
   configAllowRestartInput: document.getElementById("config-allow-restart"),
   filesEl: document.getElementById("files"),
   activePathLabel: document.getElementById("active-path"),
   pathBreadcrumbsEl: document.getElementById("path-breadcrumbs"),
-  pathInput: document.getElementById("path-input"),
-  loadFilesButton: document.getElementById("load-files"),
   goUpButton: document.getElementById("go-up"),
   showHiddenToggle: document.getElementById("show-hidden-toggle"),
   statusEl: document.getElementById("status"),
@@ -343,6 +343,7 @@ export function setFilesPlaceholder(message) {
   dom.filesEl.className = "file-list empty";
   dom.filesEl.textContent = message;
   dom.pathBreadcrumbsEl.innerHTML = "";
+  dom.activePathLabel.textContent = message;
 }
 
 export function setLogsPlaceholder(message) {

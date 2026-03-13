@@ -207,6 +207,7 @@ class ConfigResponse(BaseModel):
     agent_name: str
     agent_root: str
     port: int
+    resource_sample_interval: int
     allow_public_ip: bool
     certbot_email: str | None
     allow_self_restart: bool
@@ -224,6 +225,7 @@ class ConfigUpdateRequest(BaseModel):
     agent_name: str = Field(min_length=1, max_length=120)
     agent_root: str = Field(min_length=1, max_length=2048)
     port: int = Field(ge=1, le=65535)
+    agent_token: str | None = Field(default=None, max_length=512)
     allow_public_ip: bool
     certbot_email: str | None = Field(default=None, max_length=254)
     allow_self_restart: bool

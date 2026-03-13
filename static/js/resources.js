@@ -307,6 +307,7 @@ export function renderResources(snapshot, docker) {
 
 export function renderResourceChart(payload) {
   const points = payload.points || [];
+  state.resourceSampleInterval = Number(payload.interval_seconds) || state.resourceSampleInterval;
   dom.chartLegendEl.innerHTML = CHART_SERIES.map(
     (series) => `
       <span class="legend-chip">

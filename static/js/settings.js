@@ -73,6 +73,7 @@ export function renderConfig(config) {
   dom.configAgentNameInput.value = config.agent_name;
   dom.configAgentRootInput.value = config.agent_root;
   dom.configPortInput.value = String(config.port);
+  dom.configAgentTokenInput.value = "";
   dom.configCertbotEmailInput.value = config.certbot_email || "";
   dom.configAllowPublicInput.checked = config.allow_public_ip;
   dom.configAllowRestartInput.checked = config.allow_self_restart;
@@ -100,7 +101,7 @@ export function renderConfig(config) {
     metricCard({
       label: "鉴权 / 证书",
       value: config.token_configured ? "Bearer Token 已配置" : "未配置 Token",
-      note: config.certbot_email || "未设置 Certbot 邮箱",
+      note: `采样 ${config.resource_sample_interval} 秒 · ${config.certbot_email || "未设置 Certbot 邮箱"}`,
       tone: "tone-olive",
     }),
   ].join("");
@@ -158,6 +159,7 @@ export async function configureDomain(event) {
 export async function saveConfig(event) {
   event.preventDefault();
   const nextPort = Number(dom.configPortInput.value);
+  const nextAgentToken = dom.configAgentTokenInput.value.trim();
   if (!Number.isInteger(nextPort) || nextPort < 1 || nextPort > 65535) {
     showStatus("监听端口必须是 1-65535 之间的整数", "error");
     return;
@@ -171,6 +173,7 @@ export async function saveConfig(event) {
         agent_name: dom.configAgentNameInput.value.trim(),
         agent_root: dom.configAgentRootInput.value.trim(),
         port: nextPort,
+        agent_token: nextAgentToken,
         allow_public_ip: dom.configAllowPublicInput.checked,
         certbot_email: dom.configCertbotEmailInput.value.trim(),
         allow_self_restart: dom.configAllowRestartInput.checked,
@@ -178,12 +181,15 @@ export async function saveConfig(event) {
     });
     renderConfig(payload.config);
     await loadAccess().catch(() => {});
+    const baseMessage = payload.restart_scheduled
+      ? "固定参数已保存，agent 正在重启应用新参数"
+      : payload.restart_required
+        ? "固定参数已保存，等待你手动重启 agent 生效"
+        : "固定参数已保存";
     showStatus(
-      payload.restart_scheduled
-        ? "固定参数已保存，agent 正在重启应用新参数"
-        : payload.restart_required
-          ? "固定参数已保存，等待你手动重启 agent 生效"
-          : "固定参数已保存",
+      nextAgentToken
+        ? `${baseMessage}；访问令牌已更新，生效后需要使用新令牌重新连接`
+        : baseMessage,
       payload.restart_required ? "info" : "success"
     );
   } catch (error) {

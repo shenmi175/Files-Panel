@@ -7,7 +7,12 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from app.core.settings import ACCESS_STATE_FILE, DOMAIN_PATTERN, SETTINGS
+from app.core.settings import (
+    ACCESS_STATE_FILE,
+    DOMAIN_PATTERN,
+    SETTINGS,
+    normalize_resource_sample_interval,
+)
 from app.models import (
     AccessStatus,
     ConfigResponse,
@@ -33,6 +38,7 @@ def default_env_values() -> dict[str, str]:
         "AGENT_NAME": SETTINGS.agent_name,
         "AGENT_ROOT": str(SETTINGS.root_path),
         "AGENT_TOKEN": SETTINGS.auth_token or "",
+        "RESOURCE_SAMPLE_INTERVAL": str(SETTINGS.sample_interval_seconds),
         "ENV_FILE_PATH": str(SETTINGS.env_file_path),
         "STATE_DIR": str(SETTINGS.state_dir),
         "NGINX_SITES_AVAILABLE_DIR": str(SETTINGS.nginx_sites_available_dir),
@@ -65,6 +71,7 @@ def write_env_file(path: Path, values: dict[str, str]) -> None:
         "AGENT_NAME",
         "AGENT_ROOT",
         "AGENT_TOKEN",
+        "RESOURCE_SAMPLE_INTERVAL",
         "ENV_FILE_PATH",
         "STATE_DIR",
         "NGINX_SITES_AVAILABLE_DIR",
@@ -255,11 +262,16 @@ def build_config_response() -> ConfigResponse:
     env_values = {**default_env_values(), **read_env_file(SETTINGS.env_file_path)}
     desired_host = env_values.get("HOST", SETTINGS.host)
     desired_port = int(env_values.get("PORT", SETTINGS.port))
+    desired_sample_interval = normalize_resource_sample_interval(
+        env_values.get("RESOURCE_SAMPLE_INTERVAL"),
+        fallback=SETTINGS.sample_interval_seconds,
+    )
     public_domain = env_values.get("PUBLIC_DOMAIN") or load_access_state().get("domain") or None
     return ConfigResponse(
         agent_name=env_values.get("AGENT_NAME", SETTINGS.agent_name),
         agent_root=env_values.get("AGENT_ROOT", str(SETTINGS.root_path)),
         port=desired_port,
+        resource_sample_interval=desired_sample_interval,
         allow_public_ip=is_public_bind(desired_host),
         certbot_email=env_values.get("CERTBOT_EMAIL") or None,
         allow_self_restart=env_flag(
@@ -287,6 +299,7 @@ def update_config(request: ConfigUpdateRequest) -> ConfigUpdateResponse:
     certbot_email = (request.certbot_email or "").strip()
     allow_public_ip = bool(request.allow_public_ip)
     allow_self_restart = bool(request.allow_self_restart)
+    next_token = (request.agent_token or "").strip()
 
     env_values["AGENT_NAME"] = agent_name
     env_values["AGENT_ROOT"] = str(agent_root)
@@ -294,6 +307,8 @@ def update_config(request: ConfigUpdateRequest) -> ConfigUpdateResponse:
     env_values["HOST"] = "0.0.0.0" if allow_public_ip else "127.0.0.1"
     env_values["CERTBOT_EMAIL"] = certbot_email
     env_values["ALLOW_SELF_RESTART"] = "1" if allow_self_restart else "0"
+    if next_token:
+        env_values["AGENT_TOKEN"] = next_token
 
     try:
         write_env_file(SETTINGS.env_file_path, env_values)

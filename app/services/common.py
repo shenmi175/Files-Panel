@@ -6,7 +6,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-from app.core.settings import SETTINGS
+from app.core.settings import SETTINGS, normalize_resource_sample_interval
 
 
 def utc_now() -> str:
@@ -72,12 +72,19 @@ def runtime_restart_needed(env_values: dict[str, str]) -> bool:
     desired_host = env_values.get("HOST", SETTINGS.host)
     desired_port = int(env_values.get("PORT", SETTINGS.port))
     desired_name = env_values.get("AGENT_NAME", SETTINGS.agent_name)
+    desired_token = (env_values.get("AGENT_TOKEN", SETTINGS.auth_token or "") or "").strip() or None
+    desired_sample_interval = normalize_resource_sample_interval(
+        env_values.get("RESOURCE_SAMPLE_INTERVAL"),
+        fallback=SETTINGS.sample_interval_seconds,
+    )
     return any(
         [
             desired_host != SETTINGS.host,
             desired_port != SETTINGS.port,
             desired_name != SETTINGS.agent_name,
             desired_root != SETTINGS.root_path,
+            desired_token != SETTINGS.auth_token,
+            desired_sample_interval != SETTINGS.sample_interval_seconds,
             desired_allow_self_restart != SETTINGS.allow_self_restart,
         ]
     )

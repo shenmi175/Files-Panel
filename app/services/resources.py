@@ -11,7 +11,6 @@ import psutil
 
 from app.core.settings import (
     RESOURCE_HISTORY_MAX_POINTS,
-    RESOURCE_SAMPLE_INTERVAL,
     RESOURCE_SNAPSHOT_CACHE_TTL,
     SETTINGS,
 )
@@ -286,7 +285,7 @@ async def resource_sampler() -> None:
     while True:
         with suppress(Exception):
             record_resource_history(collect_resource_snapshot())
-        await asyncio.sleep(RESOURCE_SAMPLE_INTERVAL)
+        await asyncio.sleep(SETTINGS.sample_interval_seconds)
 
 
 async def on_startup() -> None:
@@ -312,6 +311,6 @@ async def on_shutdown() -> None:
 
 def get_resource_history() -> ResourceHistoryResponse:
     return ResourceHistoryResponse(
-        interval_seconds=RESOURCE_SAMPLE_INTERVAL,
+        interval_seconds=SETTINGS.sample_interval_seconds,
         points=list(resource_history_store()),
     )
