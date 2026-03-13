@@ -1,0 +1,37 @@
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends
+
+from app.core.auth import require_auth
+from app.models import (
+    AccessStatus,
+    ConfigResponse,
+    ConfigUpdateRequest,
+    ConfigUpdateResponse,
+    DomainSetupRequest,
+    DomainSetupResponse,
+)
+from app.services import access as access_service
+
+
+router = APIRouter(prefix="/api", tags=["access"], dependencies=[Depends(require_auth)])
+
+
+@router.get("/access", response_model=AccessStatus)
+async def get_access_status() -> AccessStatus:
+    return access_service.build_access_status()
+
+
+@router.get("/config", response_model=ConfigResponse)
+async def get_config() -> ConfigResponse:
+    return access_service.build_config_response()
+
+
+@router.post("/config", response_model=ConfigUpdateResponse)
+async def update_config(request: ConfigUpdateRequest) -> ConfigUpdateResponse:
+    return access_service.update_config(request)
+
+
+@router.post("/access/domain", response_model=DomainSetupResponse)
+async def configure_domain_access(request: DomainSetupRequest) -> DomainSetupResponse:
+    return access_service.configure_domain_access(request)
