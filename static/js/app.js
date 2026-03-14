@@ -2,16 +2,15 @@ import {
   clearProtectedViews,
   clearStatus,
   dom,
-  getToken,
+  formatError,
   getViewFromHash,
-  persistToken,
-  request,
   removePersistedToken,
+  request,
   setLogLevel,
   setView,
   showStatus,
   state,
-  syncAuthPanel,
+  updateHeroAccess,
 } from "./shared.js";
 import {
   createDirectory,
@@ -35,18 +34,94 @@ import {
   saveServer,
 } from "./settings.js";
 
-const AUTH_REQUIRED_MESSAGE = "输入访问令牌后即可读取当前页内容";
+const AUTH_REQUIRED_MESSAGE = "请先登录后再访问当前页面";
 let autoRefreshHandle = 0;
 
 function canAccessProtectedViews() {
-  return !state.authEnabled || Boolean(getToken());
+  return !state.authEnabled || state.isAuthenticated;
+}
+
+function setLoginMessage(message, type = "info") {
+  if (!message) {
+    dom.loginMessageEl.textContent = "";
+    dom.loginMessageEl.className = "auth-feedback hidden";
+    return;
+  }
+  dom.loginMessageEl.textContent = message;
+  dom.loginMessageEl.className = `auth-feedback ${type}`;
+}
+
+function resetAgentSummary() {
+  dom.agentNameEl.textContent = "待登录";
+  dom.agentHostnameEl.textContent = "-";
+  dom.agentUserEl.textContent = "-";
+  updateHeroAccess();
+}
+
+function resetProtectedState() {
+  state.agent = null;
+  state.access = null;
+  state.config = null;
+  state.docker = null;
+  state.filesLoaded = false;
+  state.selectedEntry = null;
+  state.servers = [];
+  resetServerForm();
+  resetLogsState();
+  resetAgentSummary();
+}
+
+function showLoginView(message = "") {
+  dom.appShell.classList.add("hidden");
+  dom.loginView.classList.remove("hidden");
+  dom.logoutButton.classList.add("hidden");
+  clearStatus();
+  clearProtectedViews(AUTH_REQUIRED_MESSAGE);
+  setLoginMessage(message || "请输入访问令牌登录");
+  window.setTimeout(() => {
+    dom.loginTokenInput?.focus();
+  }, 0);
+}
+
+function showAppShell() {
+  dom.loginView.classList.add("hidden");
+  dom.appShell.classList.remove("hidden");
+  dom.logoutButton.classList.toggle("hidden", !state.authEnabled || !state.isAuthenticated);
+  setLoginMessage("");
+}
+
+async function parseJsonResponse(response) {
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) {
+    return response.json();
+  }
+  return response.text();
 }
 
 async function loadHealth() {
-  const response = await fetch("/api/health");
+  const response = await fetch("/api/health", {
+    cache: "no-store",
+    credentials: "same-origin",
+  });
   const payload = await response.json();
   state.authEnabled = Boolean(payload.auth_enabled);
-  syncAuthPanel(false);
+  if (!state.authEnabled) {
+    state.isAuthenticated = true;
+  }
+}
+
+async function loadSession() {
+  if (!state.authEnabled) {
+    state.isAuthenticated = true;
+    return;
+  }
+
+  const response = await fetch("/api/auth/session", {
+    cache: "no-store",
+    credentials: "same-origin",
+  });
+  const payload = await response.json();
+  state.isAuthenticated = Boolean(payload.authenticated);
 }
 
 async function loadAgent() {
@@ -58,7 +133,7 @@ async function loadAgent() {
   dom.agentNameEl.textContent = agent.agent_name;
   dom.agentHostnameEl.textContent = agent.hostname;
   dom.agentUserEl.textContent = agent.current_user;
-  syncAuthPanel(false);
+  updateHeroAccess();
 }
 
 async function loadCurrentView({
@@ -134,7 +209,7 @@ function scheduleAutoRefresh() {
           await loadAccess();
       }
     } catch {
-      // Keep background refresh alive even if one request fails.
+      // Keep the background refresh alive even if one request fails.
     } finally {
       scheduleAutoRefresh();
     }
@@ -154,11 +229,74 @@ async function refreshVisibleView({
   });
 }
 
+async function enterAuthenticatedApp({
+  forceResourceRefresh = false,
+  forceLogsReset = false,
+  forceFilesReload = false,
+} = {}) {
+  showAppShell();
+  await loadAgent();
+  await refreshVisibleView({
+    forceResourceRefresh,
+    forceLogsReset,
+    forceFilesReload,
+  });
+  scheduleAutoRefresh();
+}
+
+function handleUnauthenticatedState(message) {
+  state.isAuthenticated = false;
+  resetProtectedState();
+  showLoginView(message);
+  scheduleAutoRefresh();
+}
+
+async function submitLogin(event) {
+  event.preventDefault();
+  const token = dom.loginTokenInput.value.trim();
+  if (!token) {
+    setLoginMessage("请输入访问令牌", "error");
+    return;
+  }
+
+  const response = await fetch("/api/auth/login", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  const payload = await parseJsonResponse(response);
+  if (!response.ok) {
+    setLoginMessage(formatError(payload), "error");
+    return;
+  }
+
+  state.isAuthenticated = true;
+  dom.loginTokenInput.value = "";
+  setLoginMessage("");
+  await enterAuthenticatedApp({
+    forceLogsReset: state.activeView === "logs",
+    forceFilesReload: state.activeView === "files",
+  });
+}
+
+async function logout() {
+  try {
+    await fetch("/api/auth/logout", {
+      method: "POST",
+      credentials: "same-origin",
+    });
+  } catch {
+    // The session cookie is best-effort cleared server-side; continue locally.
+  }
+
+  handleUnauthenticatedState("已退出登录");
+}
+
 async function handleTopLevelViewChange(view) {
   setView(view);
   if (!canAccessProtectedViews()) {
-    clearProtectedViews(AUTH_REQUIRED_MESSAGE);
-    scheduleAutoRefresh();
+    handleUnauthenticatedState(AUTH_REQUIRED_MESSAGE);
     return;
   }
 
@@ -169,48 +307,13 @@ async function handleTopLevelViewChange(view) {
   scheduleAutoRefresh();
 }
 
-async function saveToken() {
-  const nextToken = dom.tokenInput.value.trim();
-  if (!nextToken) {
-    showStatus("请输入访问令牌", "error");
-    return;
-  }
-
-  persistToken(nextToken);
-  dom.tokenInput.value = "";
-  syncAuthPanel(false);
-  try {
-    await refreshVisibleView({
-      forceLogsReset: state.activeView === "logs",
-      forceFilesReload: state.activeView === "files",
-    });
-    scheduleAutoRefresh();
-    showStatus("访问令牌已生效", "success");
-  } catch (error) {
-    removePersistedToken();
-    syncAuthPanel(true);
-    scheduleAutoRefresh();
-    showStatus(error.message, "error");
-  }
-}
-
-function clearToken() {
-  removePersistedToken();
-  state.access = null;
-  state.config = null;
-  state.docker = null;
-  state.filesLoaded = false;
-  state.selectedEntry = null;
-  state.servers = [];
-  resetServerForm();
-  resetLogsState();
-  syncAuthPanel(true);
-  clearProtectedViews(AUTH_REQUIRED_MESSAGE);
-  scheduleAutoRefresh();
-  showStatus("已清除当前浏览器中的访问令牌", "info");
-}
-
 function wireEvents() {
+  dom.loginForm.addEventListener("submit", (event) => {
+    submitLogin(event).catch((error) => setLoginMessage(error.message, "error"));
+  });
+  dom.logoutButton?.addEventListener("click", () => {
+    logout().catch((error) => setLoginMessage(error.message, "error"));
+  });
   dom.refreshButton.addEventListener("click", () =>
     refreshVisibleView({ forceResourceRefresh: true }).catch((error) =>
       showStatus(error.message, "error")
@@ -246,8 +349,6 @@ function wireEvents() {
   dom.renameButton.addEventListener("click", renameSelected);
   dom.deleteButton.addEventListener("click", deleteSelected);
   dom.downloadButton.addEventListener("click", downloadSelected);
-  dom.saveTokenButton.addEventListener("click", saveToken);
-  dom.clearTokenButton.addEventListener("click", clearToken);
   dom.domainForm.addEventListener("submit", configureDomain);
   dom.configForm.addEventListener("submit", saveConfig);
   dom.configResetTokenButton?.addEventListener("click", () => {
@@ -256,12 +357,6 @@ function wireEvents() {
   dom.serverForm.addEventListener("submit", saveServer);
   dom.resetServerFormButton.addEventListener("click", resetServerForm);
   dom.serversListEl.addEventListener("click", handleServersClick);
-  dom.tokenInput.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      saveToken().catch((error) => showStatus(error.message, "error"));
-    }
-  });
   dom.viewTabs.forEach((button) => {
     button.addEventListener("click", () => {
       handleTopLevelViewChange(button.dataset.view).catch((error) =>
@@ -274,6 +369,10 @@ function wireEvents() {
       showStatus(error.message, "error")
     );
   });
+  window.addEventListener("auth:expired", (event) => {
+    const message = event.detail?.message || "会话已失效，请重新登录";
+    handleUnauthenticatedState(message);
+  });
 }
 
 async function boot() {
@@ -281,20 +380,29 @@ async function boot() {
   setView(getViewFromHash());
   resetServerForm();
   resetLogsState();
+  removePersistedToken();
+  resetAgentSummary();
+
   try {
     await loadHealth();
-    await loadAgent();
-    if (!state.authEnabled || getToken()) {
-      await refreshVisibleView({
+    await loadSession();
+
+    if (!state.authEnabled || state.isAuthenticated) {
+      await enterAuthenticatedApp({
         forceLogsReset: state.activeView === "logs",
         forceFilesReload: state.activeView === "files",
       });
     } else {
-      clearProtectedViews("输入访问令牌后即可读取节点信息");
+      showLoginView("请输入访问令牌登录");
     }
   } catch (error) {
-    clearProtectedViews("初始化失败");
-    showStatus(error.message, "error");
+    if (state.authEnabled && !state.isAuthenticated) {
+      showLoginView(error.message);
+    } else {
+      showAppShell();
+      clearProtectedViews("初始化失败");
+      showStatus(error.message, "error");
+    }
   } finally {
     scheduleAutoRefresh();
   }

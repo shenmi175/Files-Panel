@@ -112,6 +112,47 @@ span {
   display: none !important;
 }
 
+.login-shell {
+  width: min(560px, calc(100% - 32px));
+  margin: 52px auto;
+}
+
+.login-panel {
+  padding: 30px;
+  display: grid;
+  gap: 22px;
+  background:
+    linear-gradient(135deg, rgba(255, 253, 249, 0.98), rgba(248, 243, 235, 0.94)),
+    var(--panel);
+}
+
+.login-copy,
+.login-notes,
+.login-form {
+  display: grid;
+  gap: 12px;
+}
+
+.auth-feedback {
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--text);
+}
+
+.auth-feedback.error {
+  color: var(--danger);
+  background: rgba(167, 74, 52, 0.08);
+  border-color: rgba(167, 74, 52, 0.18);
+}
+
+.auth-feedback.info {
+  color: var(--accent);
+  background: rgba(29, 92, 77, 0.08);
+  border-color: rgba(29, 92, 77, 0.18);
+}
+
 .app-shell {
   width: min(1280px, calc(100% - 32px));
   margin: 28px auto 56px;
@@ -140,6 +181,12 @@ span {
   justify-content: space-between;
   gap: 24px;
   align-items: flex-start;
+}
+
+.hero-actions {
+  display: grid;
+  gap: 12px;
+  justify-items: end;
 }
 
 .hero-copy {
@@ -199,6 +246,10 @@ h3 {
   color: white;
 }
 
+.logout-button {
+  min-width: 124px;
+}
+
 .summary-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -223,15 +274,6 @@ h3 {
   line-height: 1.1;
 }
 
-.auth-panel {
-  display: grid;
-  gap: 12px;
-  padding: 18px 20px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.68);
-}
-
 .auth-row,
 .section-actions,
 .file-header,
@@ -246,10 +288,6 @@ h3 {
   flex: 1 1 560px;
   display: grid;
   gap: 10px;
-}
-
-.auth-row input {
-  flex: 1 1 280px;
 }
 
 .status {
@@ -1011,16 +1049,19 @@ h3 {
 }
 
 @media (max-width: 900px) {
+  .login-shell,
   .app-shell {
     width: min(100%, calc(100% - 20px));
     margin-top: 18px;
   }
 
+  .login-panel,
   .hero,
   .section-panel {
     padding: 22px;
   }
 
+  .hero-actions,
   .hero-top,
   .section-head,
   .chart-head,
@@ -1058,6 +1099,10 @@ h3 {
   .view-switch,
   .log-level-switch {
     width: 100%;
+  }
+
+  .hero-actions {
+    justify-items: stretch;
   }
 
   .view-tab,

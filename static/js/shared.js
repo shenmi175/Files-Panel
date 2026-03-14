@@ -1,4 +1,5 @@
-export const TOKEN_STORAGE_KEY = "files_agent_token";
+const LEGACY_TOKEN_STORAGE_KEY = "files_agent_token";
+
 const VIEW_HASHES = {
   overview: "#overview",
   files: "#files",
@@ -6,6 +7,7 @@ const VIEW_HASHES = {
   nodes: "#nodes",
   logs: "#logs",
 };
+
 let statusClearHandle = 0;
 
 export const state = {
@@ -13,6 +15,7 @@ export const state = {
   access: null,
   config: null,
   authEnabled: false,
+  isAuthenticated: false,
   selectedEntry: null,
   currentPath: "/",
   parentPath: null,
@@ -29,15 +32,17 @@ export const state = {
 };
 
 export const dom = {
+  appShell: document.getElementById("app-shell"),
+  loginView: document.getElementById("login-view"),
+  loginForm: document.getElementById("login-form"),
+  loginTokenInput: document.getElementById("login-token"),
+  loginMessageEl: document.getElementById("login-message"),
+  logoutButton: document.getElementById("logout-button"),
   agentNameEl: document.getElementById("agent-name"),
   agentHostnameEl: document.getElementById("agent-hostname"),
   agentUserEl: document.getElementById("agent-user"),
   agentEntryEl: document.getElementById("agent-entry"),
   agentAuthEl: document.getElementById("agent-auth"),
-  authPanel: document.getElementById("auth-panel"),
-  tokenInput: document.getElementById("token-input"),
-  saveTokenButton: document.getElementById("save-token"),
-  clearTokenButton: document.getElementById("clear-token"),
   refreshButton: document.getElementById("refresh-dashboard"),
   resourcesEl: document.getElementById("resources"),
   resourceBreakdownsEl: document.getElementById("resource-breakdowns"),
@@ -100,6 +105,11 @@ function normalizeView(value) {
   return Object.prototype.hasOwnProperty.call(VIEW_HASHES, value) ? value : "overview";
 }
 
+export function removePersistedToken() {
+  window.localStorage.removeItem(LEGACY_TOKEN_STORAGE_KEY);
+  window.sessionStorage.removeItem(LEGACY_TOKEN_STORAGE_KEY);
+}
+
 export function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => {
     switch (char) {
@@ -119,32 +129,6 @@ export function escapeHtml(value) {
   });
 }
 
-export function getToken() {
-  const persistentToken = window.localStorage.getItem(TOKEN_STORAGE_KEY) || "";
-  if (persistentToken) {
-    return persistentToken;
-  }
-
-  const legacySessionToken = window.sessionStorage.getItem(TOKEN_STORAGE_KEY) || "";
-  if (legacySessionToken) {
-    window.localStorage.setItem(TOKEN_STORAGE_KEY, legacySessionToken);
-    window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
-    return legacySessionToken;
-  }
-
-  return "";
-}
-
-export function persistToken(token) {
-  window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
-  window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
-}
-
-export function removePersistedToken() {
-  window.localStorage.removeItem(TOKEN_STORAGE_KEY);
-  window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
-}
-
 export function formatError(payload) {
   if (typeof payload === "string") {
     return payload;
@@ -157,26 +141,30 @@ export function formatError(payload) {
 
 export function normalizeFeatureError(error, featureName) {
   if (error?.message !== "Not Found") {
-    return error?.message || `${featureName} 加载失败`;
+    return error?.message || `${featureName}加载失败`;
   }
-  return `${featureName} 接口未找到。当前运行中的服务版本较旧，请执行 file-panel restart 后刷新页面。`;
+  return `${featureName}接口未找到，请确认已部署最新版本后执行 file-panel restart`;
 }
 
 export async function request(path, options = {}) {
-  const headers = new Headers(options.headers || {});
-  const token = getToken();
-  if (token) {
-    headers.set("Authorization", `Bearer ${token}`);
-  }
+  const response = await fetch(path, {
+    credentials: "same-origin",
+    ...options,
+    headers: new Headers(options.headers || {}),
+  });
 
-  const response = await fetch(path, { ...options, headers });
   const contentType = response.headers.get("content-type") || "";
   const payload = contentType.includes("application/json")
     ? await response.json()
     : await response.text();
 
   if (response.status === 401) {
-    syncAuthPanel(true);
+    state.isAuthenticated = false;
+    window.dispatchEvent(
+      new CustomEvent("auth:expired", {
+        detail: { message: formatError(payload) || "会话已失效，请重新登录" },
+      })
+    );
   }
 
   if (!response.ok) {
@@ -191,6 +179,7 @@ export function showStatus(message, type = "info", options = {}) {
     window.clearTimeout(statusClearHandle);
     statusClearHandle = 0;
   }
+
   dom.statusEl.textContent = message;
   dom.statusEl.className = `status ${type}`;
   const autoClearMs = Number(options?.autoClearMs) || 0;
@@ -254,6 +243,7 @@ export function formatBytes(value) {
   if (value < 1024) {
     return `${value} B`;
   }
+
   const units = ["KB", "MB", "GB", "TB"];
   let size = value / 1024;
   let unitIndex = 0;
@@ -298,7 +288,7 @@ export function fileTypeLabel(type) {
     case "file":
       return "文件";
     default:
-      return "其他";
+      return "未知";
   }
 }
 
@@ -335,13 +325,15 @@ export function setView(view) {
 }
 
 export function updateHeroAccess() {
+  if (!state.isAuthenticated && state.authEnabled) {
+    dom.agentEntryEl.textContent = "等待登录";
+    dom.agentAuthEl.textContent = "需要会话登录后才会加载节点信息";
+    return;
+  }
+
   if (!state.access) {
-    dom.agentEntryEl.textContent = state.authEnabled && !getToken() ? "等待令牌" : "等待接入状态";
-    dom.agentAuthEl.textContent = state.authEnabled
-      ? getToken()
-        ? "访问令牌已启用"
-        : "需要访问令牌"
-      : "未启用访问令牌";
+    dom.agentEntryEl.textContent = "等待接入状态";
+    dom.agentAuthEl.textContent = state.authEnabled ? "访问令牌已启用" : "当前未启用令牌";
     return;
   }
 
@@ -349,32 +341,22 @@ export function updateHeroAccess() {
     dom.agentEntryEl.textContent = state.access.public_url.replace(/^https?:\/\//, "");
     dom.agentAuthEl.textContent = state.access.https_enabled
       ? "域名入口已启用 HTTPS"
-      : "域名已接入，HTTPS 申请中";
+      : "域名入口已建立，等待 HTTPS 就绪";
     return;
   }
 
   if (state.access.public_ip_access_enabled) {
     dom.agentEntryEl.textContent = `IP:${state.access.desired_bind_port}`;
     dom.agentAuthEl.textContent = state.authEnabled
-      ? getToken()
-        ? "允许通过 IP 访问，令牌已启用"
-        : "允许通过 IP 访问，需要访问令牌"
+      ? "通过登录会话访问公开入口"
       : "当前允许通过 IP:端口 访问";
     return;
   }
 
-  dom.agentEntryEl.textContent = "仅本地监听";
+  dom.agentEntryEl.textContent = "等待接入状态";
   dom.agentAuthEl.textContent = state.authEnabled
-    ? getToken()
-      ? "仅本地访问，令牌已启用"
-      : "仅本地访问，需要访问令牌"
-    : "仅本地访问";
-}
-
-export function syncAuthPanel(forceVisible = false) {
-  const visible = state.authEnabled && (forceVisible || !getToken());
-  dom.authPanel.classList.toggle("hidden", !visible);
-  updateHeroAccess();
+    ? "访问令牌已启用"
+    : "当前未启用令牌";
 }
 
 export function setResourcesPlaceholder(message) {
@@ -385,7 +367,7 @@ export function setResourcesPlaceholder(message) {
 }
 
 export function setChartPlaceholder(message) {
-  dom.chartRangeEl.textContent = "等待数据";
+  dom.chartRangeEl.textContent = "等待采样";
   dom.chartCaptionEl.textContent = message;
   dom.chartLegendEl.innerHTML = "";
   dom.resourceChartEl.className = "chart empty";
@@ -400,9 +382,9 @@ export function setFilesPlaceholder(message) {
 }
 
 export function setLogsPlaceholder(message) {
-  dom.logsServiceEl.textContent = "等待数据";
+  dom.logsServiceEl.textContent = "等待日志";
   dom.logsSummaryEl.textContent = message;
-  dom.logsCursorEl.textContent = "游标未建立";
+  dom.logsCursorEl.textContent = "尚未建立游标";
   dom.logsOutputEl.className = "log-stream empty";
   dom.logsOutputEl.textContent = message;
 }

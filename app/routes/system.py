@@ -4,8 +4,9 @@ import os
 import pwd
 import socket
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 
+from app.core.auth import require_auth
 from app.core.settings import SETTINGS
 from app.models import AgentInfo, HealthResponse
 from app.services.common import utc_now
@@ -19,7 +20,7 @@ def health() -> HealthResponse:
     return HealthResponse(status="ok", timestamp=utc_now(), auth_enabled=bool(SETTINGS.auth_token))
 
 
-@router.get("/agent", response_model=AgentInfo)
+@router.get("/agent", response_model=AgentInfo, dependencies=[Depends(require_auth)])
 def agent_info() -> AgentInfo:
     return AgentInfo(
         agent_name=SETTINGS.agent_name,

@@ -5,7 +5,6 @@ import {
   fileTypeLabel,
   formatBytes,
   formatTimestamp,
-  getToken,
   joinPath,
   request,
   setFilesPlaceholder,
@@ -275,14 +274,9 @@ export async function downloadSelected() {
   }
 
   try {
-    const headers = new Headers();
-    const token = getToken();
-    if (token) {
-      headers.set("Authorization", `Bearer ${token}`);
-    }
     const response = await fetch(
       `/api/files/download?path=${encodeURIComponent(state.selectedEntry.path)}`,
-      { headers }
+      { credentials: "same-origin" }
     );
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));

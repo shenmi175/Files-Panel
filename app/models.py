@@ -11,6 +11,20 @@ class HealthResponse(BaseModel):
     auth_enabled: bool
 
 
+class LoginRequest(BaseModel):
+    token: str = Field(min_length=1, max_length=512)
+
+
+class LoginResponse(BaseModel):
+    message: str
+    authenticated: bool
+
+
+class SessionStatusResponse(BaseModel):
+    auth_enabled: bool
+    authenticated: bool
+
+
 class AgentInfo(BaseModel):
     agent_name: str
     hostname: str

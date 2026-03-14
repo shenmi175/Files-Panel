@@ -5,7 +5,15 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.core.settings import SETTINGS, STATIC_DIR
-from app.routes import access_router, files_router, resources_router, runtime_router, servers_router, system_router
+from app.routes import (
+    access_router,
+    auth_router,
+    files_router,
+    resources_router,
+    runtime_router,
+    servers_router,
+    system_router,
+)
 from app.services import resources as resource_service
 from app.services import servers as server_service
 
@@ -13,6 +21,7 @@ from app.services import servers as server_service
 def create_app() -> FastAPI:
     application = FastAPI(title="Files Agent", version="1.0.0")
     application.include_router(system_router)
+    application.include_router(auth_router)
     application.include_router(access_router)
     application.include_router(resources_router)
     application.include_router(runtime_router)

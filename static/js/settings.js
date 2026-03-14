@@ -3,7 +3,6 @@ import {
   escapeHtml,
   metricCard,
   normalizeFeatureError,
-  persistToken,
   request,
   setAccessPlaceholder,
   setConfigPlaceholder,
@@ -425,7 +424,6 @@ export async function resetAgentToken() {
         "info"
       );
       window.setTimeout(() => {
-        persistToken(payload.token);
         window.location.reload();
       }, TOKEN_SWITCH_DELAY_MS);
       return;
