@@ -1,16 +1,18 @@
 from __future__ import annotations
 
 import asyncio
+import math
 import os
 import socket
 import time
-from collections import deque
 from contextlib import suppress
+from datetime import datetime, timedelta, timezone
 
 import psutil
 
+from app.core import storage
 from app.core.settings import (
-    RESOURCE_HISTORY_MAX_POINTS,
+    RESOURCE_HISTORY_RETENTION_DAYS,
     RESOURCE_SNAPSHOT_CACHE_TTL,
     SETTINGS,
 )
@@ -26,6 +28,8 @@ from app.models import (
     ProcessStats,
     ResourceHistoryPoint,
     ResourceHistoryResponse,
+    ResourceHistorySummary,
+    ResourceMetricRollup,
     ResourceRateTracker,
     ResourceSnapshot,
     SwapStats,
@@ -33,12 +37,196 @@ from app.models import (
 from app.services.common import format_uptime, human_bytes, utc_now
 
 
+RESOURCE_HISTORY_RANGES: dict[str, int] = {
+    "15m": 15 * 60,
+    "1h": 60 * 60,
+    "6h": 6 * 60 * 60,
+    "24h": 24 * 60 * 60,
+    "7d": 7 * 24 * 60 * 60,
+}
+DEFAULT_RESOURCE_HISTORY_RANGE = "1h"
+RESOURCE_HISTORY_MAX_CHART_POINTS = 240
+RESOURCE_HISTORY_PRUNE_INTERVAL_SECONDS = 6 * 60 * 60
+
 _resource_rate_tracker: ResourceRateTracker | None = None
 _latest_resource_snapshot: ResourceSnapshot | None = None
 _latest_resource_snapshot_epoch = 0.0
-_resource_history: deque[ResourceHistoryPoint] = deque(maxlen=RESOURCE_HISTORY_MAX_POINTS)
 _resource_history_last_epoch = 0.0
+_resource_prune_last_epoch = 0.0
 _resource_sampler_task: asyncio.Task[None] | None = None
+
+
+def _utc_datetime_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _parse_utc_timestamp(value: str) -> datetime:
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _round_metric(value: float | None) -> float | None:
+    if value is None or not math.isfinite(value):
+        return None
+    return round(value, 1)
+
+
+def _resolve_history_range(range_key: str | None) -> tuple[str, int]:
+    normalized = str(range_key or DEFAULT_RESOURCE_HISTORY_RANGE).strip().lower()
+    seconds = RESOURCE_HISTORY_RANGES.get(normalized)
+    if seconds is None:
+        return DEFAULT_RESOURCE_HISTORY_RANGE, RESOURCE_HISTORY_RANGES[DEFAULT_RESOURCE_HISTORY_RANGE]
+    return normalized, seconds
+
+
+def _record_to_history_point(record: dict[str, float | int | str]) -> ResourceHistoryPoint:
+    return ResourceHistoryPoint(
+        timestamp=str(record["sampled_at"]),
+        cpu_used_percent=float(record["cpu_used_percent"]),
+        memory_used_percent=float(record["memory_used_percent"]),
+        disk_used_percent=float(record["disk_used_percent"]),
+        load_ratio_percent=float(record["load_ratio_percent"]),
+    )
+
+
+def _serialize_snapshot(snapshot: ResourceSnapshot) -> dict[str, float | int | str]:
+    return {
+        "sampled_at": snapshot.sampled_at,
+        "cpu_used_percent": snapshot.cpu_used_percent,
+        "memory_used_percent": snapshot.memory.used_percent,
+        "disk_used_percent": snapshot.root_disk.used_percent,
+        "load_ratio_percent": snapshot.load_ratio_percent,
+        "network_download_bps": snapshot.network.download_bps,
+        "network_upload_bps": snapshot.network.upload_bps,
+        "disk_read_bps": snapshot.disk_io.read_bps,
+        "disk_write_bps": snapshot.disk_io.write_bps,
+    }
+
+
+def _rolling_average(
+    records: list[dict[str, float | int | str]],
+    key: str,
+    *,
+    latest_at: datetime,
+    window_seconds: int,
+) -> float | None:
+    cutoff = latest_at - timedelta(seconds=window_seconds)
+    values: list[float] = []
+    for record in reversed(records):
+        sampled_at = _parse_utc_timestamp(str(record["sampled_at"]))
+        if sampled_at < cutoff:
+            break
+        values.append(float(record[key]))
+    if not values:
+        return None
+    return sum(values) / len(values)
+
+
+def _build_metric_rollup(
+    records: list[dict[str, float | int | str]],
+    key: str,
+    *,
+    latest_at: datetime,
+) -> ResourceMetricRollup:
+    current = float(records[-1][key]) if records else None
+    return ResourceMetricRollup(
+        current=_round_metric(current),
+        average_1m=_round_metric(
+            _rolling_average(records, key, latest_at=latest_at, window_seconds=60)
+        ),
+        average_5m=_round_metric(
+            _rolling_average(records, key, latest_at=latest_at, window_seconds=5 * 60)
+        ),
+    )
+
+
+def _build_history_summary(
+    records: list[dict[str, float | int | str]],
+) -> ResourceHistorySummary:
+    if not records:
+        empty = ResourceMetricRollup(current=None, average_1m=None, average_5m=None)
+        return ResourceHistorySummary(
+            cpu_used_percent=empty,
+            memory_used_percent=empty,
+            disk_used_percent=empty,
+            load_ratio_percent=empty,
+        )
+
+    latest_at = _parse_utc_timestamp(str(records[-1]["sampled_at"]))
+    return ResourceHistorySummary(
+        cpu_used_percent=_build_metric_rollup(records, "cpu_used_percent", latest_at=latest_at),
+        memory_used_percent=_build_metric_rollup(records, "memory_used_percent", latest_at=latest_at),
+        disk_used_percent=_build_metric_rollup(records, "disk_used_percent", latest_at=latest_at),
+        load_ratio_percent=_build_metric_rollup(records, "load_ratio_percent", latest_at=latest_at),
+    )
+
+
+def _downsample_history_points(
+    records: list[dict[str, float | int | str]],
+    *,
+    range_start: datetime,
+    base_resolution_seconds: int,
+) -> tuple[list[ResourceHistoryPoint], int]:
+    if len(records) <= RESOURCE_HISTORY_MAX_CHART_POINTS:
+        return [_record_to_history_point(record) for record in records], base_resolution_seconds
+
+    bucket_seconds = max(
+        base_resolution_seconds,
+        math.ceil(len(records) / RESOURCE_HISTORY_MAX_CHART_POINTS) * base_resolution_seconds,
+    )
+    buckets: dict[int, list[dict[str, float | int | str]]] = {}
+
+    for record in records:
+        sampled_at = _parse_utc_timestamp(str(record["sampled_at"]))
+        bucket_index = max(
+            0,
+            int((sampled_at - range_start).total_seconds() // bucket_seconds),
+        )
+        buckets.setdefault(bucket_index, []).append(record)
+
+    points: list[ResourceHistoryPoint] = []
+    for bucket_index in sorted(buckets):
+        bucket = buckets[bucket_index]
+        last_record = bucket[-1]
+        count = len(bucket)
+        points.append(
+            ResourceHistoryPoint(
+                timestamp=str(last_record["sampled_at"]),
+                cpu_used_percent=round(
+                    sum(float(item["cpu_used_percent"]) for item in bucket) / count,
+                    1,
+                ),
+                memory_used_percent=round(
+                    sum(float(item["memory_used_percent"]) for item in bucket) / count,
+                    1,
+                ),
+                disk_used_percent=round(
+                    sum(float(item["disk_used_percent"]) for item in bucket) / count,
+                    1,
+                ),
+                load_ratio_percent=round(
+                    sum(float(item["load_ratio_percent"]) for item in bucket) / count,
+                    1,
+                ),
+            )
+        )
+    return points, bucket_seconds
+
+
+def _persist_resource_snapshot(snapshot: ResourceSnapshot) -> None:
+    storage.save_resource_sample(_serialize_snapshot(snapshot))
+
+
+def _prune_resource_history(now_epoch: float) -> None:
+    global _resource_prune_last_epoch
+
+    if now_epoch - _resource_prune_last_epoch < RESOURCE_HISTORY_PRUNE_INTERVAL_SECONDS:
+        return
+    cutoff = (_utc_datetime_now() - timedelta(days=RESOURCE_HISTORY_RETENTION_DAYS)).isoformat()
+    storage.prune_resource_samples(cutoff)
+    _resource_prune_last_epoch = now_epoch
 
 
 def resolve_mount_point(target: os.PathLike[str] | str) -> str:
@@ -78,7 +266,9 @@ def sample_process_stats() -> ProcessStats:
     with suppress(psutil.Error, PermissionError, OSError):
         connections = psutil.net_connections(kind="tcp")
         tcp_connections = len(connections)
-        established_connections = sum(1 for item in connections if item.status == psutil.CONN_ESTABLISHED)
+        established_connections = sum(
+            1 for item in connections if item.status == psutil.CONN_ESTABLISHED
+        )
     return ProcessStats(
         total_processes=total_processes,
         tcp_connections=tcp_connections,
@@ -138,8 +328,12 @@ def sample_resource_rates() -> tuple[
     disk_device_stats: list[DiskDeviceStats] = []
 
     if net:
-        download_bps = int(max(net.bytes_recv - _resource_rate_tracker.net_bytes_recv, 0) / elapsed)
-        upload_bps = int(max(net.bytes_sent - _resource_rate_tracker.net_bytes_sent, 0) / elapsed)
+        download_bps = int(
+            max(net.bytes_recv - _resource_rate_tracker.net_bytes_recv, 0) / elapsed
+        )
+        upload_bps = int(
+            max(net.bytes_sent - _resource_rate_tracker.net_bytes_sent, 0) / elapsed
+        )
         _resource_rate_tracker.net_bytes_recv = net.bytes_recv
         _resource_rate_tracker.net_bytes_sent = net.bytes_sent
 
@@ -157,13 +351,16 @@ def sample_resource_rates() -> tuple[
         )
         _resource_rate_tracker.net_by_nic[name] = (stats.bytes_recv, stats.bytes_sent)
     _resource_rate_tracker.net_by_nic = {
-        name: _resource_rate_tracker.net_by_nic[name]
-        for name in (net_per_nic or {}).keys()
+        name: _resource_rate_tracker.net_by_nic[name] for name in (net_per_nic or {}).keys()
     }
 
     if disk_io:
-        read_bps = int(max(disk_io.read_bytes - _resource_rate_tracker.disk_read_bytes, 0) / elapsed)
-        write_bps = int(max(disk_io.write_bytes - _resource_rate_tracker.disk_write_bytes, 0) / elapsed)
+        read_bps = int(
+            max(disk_io.read_bytes - _resource_rate_tracker.disk_read_bytes, 0) / elapsed
+        )
+        write_bps = int(
+            max(disk_io.write_bytes - _resource_rate_tracker.disk_write_bytes, 0) / elapsed
+        )
         _resource_rate_tracker.disk_read_bytes = disk_io.read_bytes
         _resource_rate_tracker.disk_write_bytes = disk_io.write_bytes
 
@@ -263,26 +460,6 @@ def get_resource_snapshot(*, force_refresh: bool = False) -> ResourceSnapshot:
     return collect_resource_snapshot()
 
 
-def build_history_point(snapshot: ResourceSnapshot | None = None) -> ResourceHistoryPoint:
-    current = snapshot or get_resource_snapshot()
-    return ResourceHistoryPoint(
-        timestamp=current.sampled_at,
-        cpu_used_percent=current.cpu_used_percent,
-        memory_used_percent=current.memory.used_percent,
-        disk_used_percent=current.root_disk.used_percent,
-        load_ratio_percent=current.load_ratio_percent,
-    )
-
-
-def resource_history_store() -> deque[ResourceHistoryPoint]:
-    global _resource_history_last_epoch
-
-    if not _resource_history:
-        _resource_history.append(build_history_point(collect_resource_snapshot()))
-        _resource_history_last_epoch = time.time()
-    return _resource_history
-
-
 def record_resource_history(
     snapshot: ResourceSnapshot | None = None,
     *,
@@ -290,27 +467,33 @@ def record_resource_history(
 ) -> None:
     global _resource_history_last_epoch
 
-    now = time.time()
-    if min_interval_seconds and now - _resource_history_last_epoch < min_interval_seconds:
+    now_epoch = time.time()
+    if min_interval_seconds and now_epoch - _resource_history_last_epoch < min_interval_seconds:
         return
-    resource_history_store().append(build_history_point(snapshot))
-    _resource_history_last_epoch = now
+
+    current_snapshot = snapshot or get_resource_snapshot()
+    _persist_resource_snapshot(current_snapshot)
+    _resource_history_last_epoch = now_epoch
+    _prune_resource_history(now_epoch)
 
 
 async def resource_sampler() -> None:
     while True:
         with suppress(Exception):
-            record_resource_history(collect_resource_snapshot())
+            record_resource_history(
+                collect_resource_snapshot(),
+                min_interval_seconds=SETTINGS.sample_interval_seconds,
+            )
         await asyncio.sleep(SETTINGS.sample_interval_seconds)
 
 
 async def on_startup() -> None:
-    global _resource_sampler_task, _resource_history_last_epoch, _resource_history
+    global _resource_sampler_task, _resource_history_last_epoch, _resource_prune_last_epoch
 
     psutil.cpu_percent(interval=None)
-    initial_snapshot = collect_resource_snapshot()
-    _resource_history = deque([build_history_point(initial_snapshot)], maxlen=RESOURCE_HISTORY_MAX_POINTS)
-    _resource_history_last_epoch = time.time()
+    _resource_history_last_epoch = 0.0
+    _resource_prune_last_epoch = 0.0
+    record_resource_history(collect_resource_snapshot())
     _resource_sampler_task = asyncio.create_task(resource_sampler())
 
 
@@ -325,8 +508,31 @@ async def on_shutdown() -> None:
     _resource_sampler_task = None
 
 
-def get_resource_history() -> ResourceHistoryResponse:
+def get_resource_history(range_key: str | None = None) -> ResourceHistoryResponse:
+    normalized_range, range_seconds = _resolve_history_range(range_key)
+    range_start = _utc_datetime_now() - timedelta(seconds=range_seconds)
+    records = storage.list_resource_samples(since=range_start.isoformat())
+
+    if not records:
+        snapshot = collect_resource_snapshot()
+        record_resource_history(snapshot)
+        records = storage.list_resource_samples(since=range_start.isoformat())
+
+    points, resolution_seconds = _downsample_history_points(
+        records,
+        range_start=range_start,
+        base_resolution_seconds=SETTINGS.sample_interval_seconds,
+    )
+    summary = _build_history_summary(records)
+
     return ResourceHistoryResponse(
         interval_seconds=SETTINGS.sample_interval_seconds,
-        points=list(resource_history_store()),
+        resolution_seconds=resolution_seconds,
+        range_key=normalized_range,
+        range_seconds=range_seconds,
+        sampled_from=points[0].timestamp if points else None,
+        sampled_to=points[-1].timestamp if points else None,
+        point_count=len(points),
+        points=points,
+        summary=summary,
     )

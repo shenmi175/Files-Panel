@@ -716,10 +716,17 @@ h3 {
   background: rgba(255, 255, 255, 0.72);
 }
 
+.chart-tools {
+  display: grid;
+  gap: 12px;
+  justify-items: end;
+}
+
 .legend {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .legend-chip {
@@ -737,6 +744,59 @@ h3 {
   height: 10px;
   border-radius: 999px;
   display: inline-block;
+}
+
+.range-tabs {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.resource-range-tab {
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+}
+
+.resource-range-tab:hover {
+  box-shadow: none;
+}
+
+.resource-range-tab.is-active {
+  background: var(--text);
+  color: white;
+}
+
+.rollup-card {
+  display: grid;
+  gap: 14px;
+}
+
+.rollup-strip {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.rollup-item {
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(33, 47, 40, 0.08);
+  background: rgba(255, 252, 247, 0.86);
+  display: grid;
+  gap: 4px;
+}
+
+.rollup-item strong {
+  font-size: 15px;
+  line-height: 1.2;
 }
 
 .chart {
@@ -1240,6 +1300,7 @@ h3 {
   .resource-detail-grid,
   .docker-overview,
   .docker-stat-grid,
+  .rollup-strip,
   .settings-form,
   .compact-form {
     grid-template-columns: 1fr;
@@ -1265,12 +1326,19 @@ h3 {
 
   .view-switch,
   .view-switch-sidebar,
-  .log-level-switch {
+  .log-level-switch,
+  .range-tabs {
     width: 100%;
   }
 
   .hero-actions {
     justify-items: stretch;
+  }
+
+  .chart-tools,
+  .legend {
+    justify-items: stretch;
+    justify-content: flex-start;
   }
 
   .view-tab,

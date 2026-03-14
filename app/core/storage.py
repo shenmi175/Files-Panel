@@ -23,6 +23,17 @@ CONFIG_KEYS = (
     "CERTBOT_EMAIL",
     "ALLOW_SELF_RESTART",
 )
+RESOURCE_SAMPLE_FIELDS = (
+    "sampled_at",
+    "cpu_used_percent",
+    "memory_used_percent",
+    "disk_used_percent",
+    "load_ratio_percent",
+    "network_download_bps",
+    "network_upload_bps",
+    "disk_read_bps",
+    "disk_write_bps",
+)
 
 
 @dataclass(frozen=True)
@@ -117,6 +128,18 @@ def initialize_storage(default_config: dict[str, str] | None = None) -> None:
             CREATE UNIQUE INDEX IF NOT EXISTS idx_servers_single_local
             ON servers (is_local)
             WHERE is_local = 1;
+
+            CREATE TABLE IF NOT EXISTS resource_samples (
+                sampled_at TEXT PRIMARY KEY,
+                cpu_used_percent REAL NOT NULL,
+                memory_used_percent REAL NOT NULL,
+                disk_used_percent REAL NOT NULL,
+                load_ratio_percent REAL NOT NULL,
+                network_download_bps INTEGER NOT NULL,
+                network_upload_bps INTEGER NOT NULL,
+                disk_read_bps INTEGER NOT NULL,
+                disk_write_bps INTEGER NOT NULL
+            );
             """
         )
 
@@ -405,4 +428,90 @@ def upsert_local_server(
             WHERE is_local = 1
             """,
             (name, base_url, wireguard_ip, last_seen_at or now, now),
+        )
+
+
+def save_resource_sample(values: dict[str, Any]) -> None:
+    payload = {key: values[key] for key in RESOURCE_SAMPLE_FIELDS}
+    with connect() as connection:
+        connection.execute(
+            """
+            INSERT INTO resource_samples (
+                sampled_at,
+                cpu_used_percent,
+                memory_used_percent,
+                disk_used_percent,
+                load_ratio_percent,
+                network_download_bps,
+                network_upload_bps,
+                disk_read_bps,
+                disk_write_bps
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(sampled_at) DO UPDATE SET
+                cpu_used_percent = excluded.cpu_used_percent,
+                memory_used_percent = excluded.memory_used_percent,
+                disk_used_percent = excluded.disk_used_percent,
+                load_ratio_percent = excluded.load_ratio_percent,
+                network_download_bps = excluded.network_download_bps,
+                network_upload_bps = excluded.network_upload_bps,
+                disk_read_bps = excluded.disk_read_bps,
+                disk_write_bps = excluded.disk_write_bps
+            """,
+            tuple(payload[key] for key in RESOURCE_SAMPLE_FIELDS),
+        )
+
+
+def list_resource_samples(
+    *,
+    since: str | None = None,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    query = [
+        """
+        SELECT
+            sampled_at,
+            cpu_used_percent,
+            memory_used_percent,
+            disk_used_percent,
+            load_ratio_percent,
+            network_download_bps,
+            network_upload_bps,
+            disk_read_bps,
+            disk_write_bps
+        FROM resource_samples
+        """
+    ]
+    parameters: list[Any] = []
+    if since:
+        query.append("WHERE sampled_at >= ?")
+        parameters.append(since)
+    query.append("ORDER BY sampled_at ASC")
+    if limit is not None:
+        query.append("LIMIT ?")
+        parameters.append(limit)
+
+    with connect() as connection:
+        rows = connection.execute(" ".join(query), tuple(parameters)).fetchall()
+
+    return [
+        {
+            "sampled_at": str(row["sampled_at"]),
+            "cpu_used_percent": float(row["cpu_used_percent"]),
+            "memory_used_percent": float(row["memory_used_percent"]),
+            "disk_used_percent": float(row["disk_used_percent"]),
+            "load_ratio_percent": float(row["load_ratio_percent"]),
+            "network_download_bps": int(row["network_download_bps"]),
+            "network_upload_bps": int(row["network_upload_bps"]),
+            "disk_read_bps": int(row["disk_read_bps"]),
+            "disk_write_bps": int(row["disk_write_bps"]),
+        }
+        for row in rows
+    ]
+
+
+def prune_resource_samples(before: str) -> None:
+    with connect() as connection:
+        connection.execute(
+            "DELETE FROM resource_samples WHERE sampled_at < ?",
+            (before,),
         )

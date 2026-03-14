@@ -21,6 +21,7 @@ export const state = {
   parentPath: null,
   showHidden: false,
   resourceSampleInterval: 5,
+  resourceRange: "1h",
   activeView: "overview",
   resourcesLoaded: false,
   filesLoaded: false,
@@ -54,6 +55,7 @@ export const dom = {
   chartRangeEl: document.getElementById("chart-range"),
   chartCaptionEl: document.getElementById("chart-caption"),
   chartLegendEl: document.getElementById("chart-legend"),
+  resourceRangeTabsEl: document.getElementById("resource-range-tabs"),
   resourceChartEl: document.getElementById("resource-chart"),
   accessSummaryEl: document.getElementById("access-summary"),
   accessCardsEl: document.getElementById("access-cards"),
@@ -104,6 +106,7 @@ export const dom = {
   logsCursorEl: document.getElementById("logs-cursor"),
   logsOutputEl: document.getElementById("logs-output"),
   logLevelTabs: document.querySelectorAll(".log-level-tab"),
+  resourceRangeButtons: document.querySelectorAll(".resource-range-tab"),
   viewTabs: document.querySelectorAll(".view-tab"),
 };
 

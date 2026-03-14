@@ -153,9 +153,29 @@ class ResourceHistoryPoint(BaseModel):
     load_ratio_percent: float
 
 
+class ResourceMetricRollup(BaseModel):
+    current: float | None
+    average_1m: float | None
+    average_5m: float | None
+
+
+class ResourceHistorySummary(BaseModel):
+    cpu_used_percent: ResourceMetricRollup
+    memory_used_percent: ResourceMetricRollup
+    disk_used_percent: ResourceMetricRollup
+    load_ratio_percent: ResourceMetricRollup
+
+
 class ResourceHistoryResponse(BaseModel):
     interval_seconds: int
+    resolution_seconds: int
+    range_key: str
+    range_seconds: int
+    sampled_from: str | None
+    sampled_to: str | None
+    point_count: int
     points: list[ResourceHistoryPoint]
+    summary: ResourceHistorySummary
 
 
 class DockerContainerSummary(BaseModel):

@@ -132,7 +132,16 @@
                     <h3>趋势</h3>
                     <p id="chart-caption" class="muted">等待历史采样点</p>
                   </div>
-                  <div id="chart-legend" class="legend"></div>
+                  <div class="chart-tools">
+                    <div id="resource-range-tabs" class="range-tabs" aria-label="资源历史时间范围">
+                      <button type="button" class="resource-range-tab" data-range="15m">15m</button>
+                      <button type="button" class="resource-range-tab is-active" data-range="1h">1h</button>
+                      <button type="button" class="resource-range-tab" data-range="6h">6h</button>
+                      <button type="button" class="resource-range-tab" data-range="24h">24h</button>
+                      <button type="button" class="resource-range-tab" data-range="7d">7d</button>
+                    </div>
+                    <div id="chart-legend" class="legend"></div>
+                  </div>
                 </div>
                 <div id="resource-chart" class="chart empty">等待趋势数据</div>
               </div>

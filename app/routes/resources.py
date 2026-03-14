@@ -22,5 +22,5 @@ def get_resources(fresh: bool = Query(default=False)) -> ResourceSnapshot:
 
 
 @router.get("/resources/history", response_model=ResourceHistoryResponse)
-def get_resource_history() -> ResourceHistoryResponse:
-    return resource_service.get_resource_history()
+def get_resource_history(range: str = Query(default="1h")) -> ResourceHistoryResponse:
+    return resource_service.get_resource_history(range)
