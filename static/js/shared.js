@@ -2,6 +2,7 @@ const LEGACY_TOKEN_STORAGE_KEY = "files_agent_token";
 
 const VIEW_HASHES = {
   overview: "#overview",
+  guide: "#guide",
   files: "#files",
   access: "#access",
   nodes: "#nodes",
@@ -96,6 +97,7 @@ export const dom = {
   deleteButton: document.getElementById("delete-button"),
   downloadButton: document.getElementById("download-button"),
   overviewView: document.getElementById("overview-view"),
+  guideView: document.getElementById("guide-view"),
   filesView: document.getElementById("files-view"),
   accessView: document.getElementById("access-view"),
   nodesView: document.getElementById("nodes-view"),
@@ -320,6 +322,7 @@ export function setView(view) {
   const normalizedView = normalizeView(view);
   state.activeView = normalizedView;
   dom.overviewView.classList.toggle("hidden", normalizedView !== "overview");
+  dom.guideView.classList.toggle("hidden", normalizedView !== "guide");
   dom.filesView.classList.toggle("hidden", normalizedView !== "files");
   dom.accessView.classList.toggle("hidden", normalizedView !== "access");
   dom.nodesView.classList.toggle("hidden", normalizedView !== "nodes");

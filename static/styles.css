@@ -1232,6 +1232,26 @@ h3 {
   color: var(--muted);
 }
 
+.guide-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.guide-card {
+  padding: 20px 22px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.78);
+  display: grid;
+  gap: 10px;
+}
+
+.guide-card p {
+  color: var(--text);
+  line-height: 1.65;
+}
+
 @media (max-width: 1160px) {
   .workspace-shell {
     grid-template-columns: 1fr;
@@ -1301,6 +1321,7 @@ h3 {
   .docker-overview,
   .docker-stat-grid,
   .rollup-strip,
+  .guide-grid,
   .settings-form,
   .compact-form {
     grid-template-columns: 1fr;

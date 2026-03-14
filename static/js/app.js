@@ -37,18 +37,6 @@ import {
 const AUTH_REQUIRED_MESSAGE = "请先登录后再访问控制面板。";
 let autoRefreshHandle = 0;
 
-function queueIdleTask(task) {
-  if ("requestIdleCallback" in window) {
-    window.requestIdleCallback(() => {
-      void task();
-    }, { timeout: 1200 });
-    return;
-  }
-  window.setTimeout(() => {
-    void task();
-  }, 180);
-}
-
 function canAccessProtectedViews() {
   return !state.authEnabled || state.isAuthenticated;
 }
@@ -59,6 +47,8 @@ function isViewWarm(view) {
       return state.accessLoaded && state.resourcesLoaded;
     case "files":
       return state.filesLoaded;
+    case "guide":
+      return true;
     case "access":
       return state.accessLoaded && state.configLoaded;
     case "nodes":
@@ -189,6 +179,8 @@ async function loadCurrentView({
         forceFilesReload || !state.filesLoaded ? loadFiles() : Promise.resolve(),
       ]);
       return;
+    case "guide":
+      return;
     case "access":
       await refreshSettings({ includeConfig: true, includeServers: false });
       return;
@@ -212,7 +204,7 @@ function startBackgroundPreload() {
   }
 
   state.preloadStarted = true;
-  queueIdleTask(async () => {
+  void (async () => {
     const tasks = [];
 
     if (!(state.accessLoaded && state.configLoaded && state.serversLoaded)) {
@@ -225,11 +217,11 @@ function startBackgroundPreload() {
       tasks.push(loadFiles());
     }
     if (!state.logsLoaded) {
-      tasks.push(loadLogsSection({ reset: true }));
+      tasks.push(loadLogsSection());
     }
 
     await Promise.allSettled(tasks.map((task) => Promise.resolve(task).catch(() => {})));
-  });
+  })();
 }
 
 function nextAutoRefreshDelay() {
@@ -338,7 +330,7 @@ async function submitLogin(event) {
   dom.loginTokenInput.value = "";
   setLoginMessage("");
   await enterAuthenticatedApp({
-    forceLogsReset: state.activeView === "logs",
+    forceLogsReset: false,
     forceFilesReload: state.activeView === "files",
   });
 }
@@ -364,7 +356,7 @@ async function handleTopLevelViewChange(view) {
   }
 
   const refreshPromise = refreshVisibleView({
-    forceLogsReset: view === "logs",
+    forceLogsReset: false,
     forceFilesReload: view === "files",
   });
 
@@ -461,7 +453,7 @@ async function boot() {
 
     if (!state.authEnabled || state.isAuthenticated) {
       await enterAuthenticatedApp({
-        forceLogsReset: state.activeView === "logs",
+        forceLogsReset: false,
         forceFilesReload: state.activeView === "files",
       });
     } else {

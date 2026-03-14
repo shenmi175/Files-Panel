@@ -139,11 +139,11 @@ function renderRollupCard({ label, rollup, note, tone }) {
           <strong>${escapeHtml(formatRollupValue(rollup?.current))}</strong>
         </div>
         <div class="rollup-item">
-          <span>1m 均值</span>
+          <span>1m</span>
           <strong>${escapeHtml(formatRollupValue(rollup?.average_1m))}</strong>
         </div>
         <div class="rollup-item">
-          <span>5m 均值</span>
+          <span>5m</span>
           <strong>${escapeHtml(formatRollupValue(rollup?.average_5m))}</strong>
         </div>
       </div>
@@ -212,7 +212,6 @@ function renderDockerSection(docker) {
       <div class="detail-head">
         <div>
           <h3>Docker 状态</h3>
-          <p class="muted">显示当前运行容器的健康度，以及容器 CPU 和内存占用概况。</p>
         </div>
       </div>
       <div class="docker-overview">
@@ -286,7 +285,6 @@ function renderNetworkSection(snapshot) {
       <div class="detail-head">
         <div>
           <h3>网卡</h3>
-          <p class="muted">显示各网卡当前上下行速率，属于瞬时采样结果，不代表长周期平均吞吐。</p>
         </div>
       </div>
       <div class="detail-list">
@@ -319,7 +317,6 @@ function renderDiskSection(snapshot) {
       <div class="detail-head">
         <div>
           <h3>磁盘</h3>
-          <p class="muted">显示各块设备当前读写速率，属于瞬时采样结果，不代表持续吞吐能力。</p>
         </div>
       </div>
       <div class="detail-list">
@@ -366,7 +363,6 @@ function renderResources(snapshot, historyPayload, docker) {
           <p class="section-kicker">Capacity</p>
           <h3>容量与健康</h3>
         </div>
-        <p class="muted">卡片主值显示当前采样值，1m 和 5m 显示平滑均值，避免把单次尖峰误读为长期趋势。</p>
       </div>
       <div class="metric-grid metric-grid-ring">
         ${renderRollupCard({
@@ -402,7 +398,6 @@ function renderResources(snapshot, historyPayload, docker) {
           <p class="section-kicker">Runtime</p>
           <h3>运行概况</h3>
         </div>
-        <p class="muted">这里集中显示主机信息、采样节奏和当前吞吐，便于快速判断是资源压力还是单次波动。</p>
       </div>
       <div class="metric-grid metric-grid-context">
         ${metricCard({
