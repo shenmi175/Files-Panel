@@ -30,12 +30,31 @@ import {
   handleServersClick,
   loadAccess,
   refreshSettings,
+  resetAgentToken,
   resetServerForm,
   saveConfig,
   saveServer,
 } from "./settings.js";
 
 let autoRefreshHandle = 0;
+
+function ensureConfigResetTokenButton() {
+  if (dom.configResetTokenButton) {
+    return;
+  }
+  const saveButton = document.getElementById("save-config");
+  if (!saveButton || !saveButton.parentElement) {
+    return;
+  }
+
+  const button = document.createElement("button");
+  button.id = "config-reset-token";
+  button.type = "button";
+  button.className = "secondary";
+  button.textContent = "重置令牌";
+  saveButton.parentElement.insertBefore(button, saveButton);
+  dom.configResetTokenButton = button;
+}
 
 function canAccessProtectedViews() {
   return !state.authEnabled || Boolean(getToken());
@@ -253,6 +272,9 @@ function wireEvents() {
   dom.clearTokenButton.addEventListener("click", clearToken);
   dom.domainForm.addEventListener("submit", configureDomain);
   dom.configForm.addEventListener("submit", saveConfig);
+  dom.configResetTokenButton?.addEventListener("click", () => {
+    resetAgentToken().catch((error) => showStatus(error.message, "error"));
+  });
   dom.serverForm.addEventListener("submit", saveServer);
   dom.resetServerFormButton.addEventListener("click", resetServerForm);
   dom.serversListEl.addEventListener("click", handleServersClick);
@@ -299,5 +321,6 @@ async function boot() {
   }
 }
 
+ensureConfigResetTokenButton();
 wireEvents();
 boot();

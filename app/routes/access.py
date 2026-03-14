@@ -10,6 +10,7 @@ from app.models import (
     ConfigUpdateResponse,
     DomainSetupRequest,
     DomainSetupResponse,
+    TokenResetResponse,
 )
 from app.services import access as access_service
 
@@ -30,6 +31,11 @@ def get_config() -> ConfigResponse:
 @router.post("/config", response_model=ConfigUpdateResponse)
 def update_config(request: ConfigUpdateRequest) -> ConfigUpdateResponse:
     return access_service.update_config(request)
+
+
+@router.post("/config/reset-token", response_model=TokenResetResponse)
+def reset_config_token() -> TokenResetResponse:
+    return access_service.reset_agent_token()
 
 
 @router.post("/access/domain", response_model=DomainSetupResponse)

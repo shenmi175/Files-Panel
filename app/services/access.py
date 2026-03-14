@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 import sqlite3
 import shlex
 import subprocess
@@ -17,6 +18,7 @@ from app.models import (
     ConfigUpdateResponse,
     DomainSetupRequest,
     DomainSetupResponse,
+    TokenResetResponse,
 )
 from app.services.common import (
     command_available,
@@ -52,6 +54,10 @@ def default_config_values() -> dict[str, str]:
 
 def persisted_config_values() -> dict[str, str]:
     return {**default_config_values(), **load_config_values()}
+
+
+def generate_agent_token() -> str:
+    return secrets.token_urlsafe(32)
 
 
 def run_command(command: list[str], action: str, *, timeout_seconds: int = COMMAND_TIMEOUT_SECONDS) -> None:
@@ -306,6 +312,43 @@ def update_config(request: ConfigUpdateRequest) -> ConfigUpdateResponse:
 
     return ConfigUpdateResponse(
         message=message,
+        restart_required=restart_required,
+        restart_scheduled=restart_scheduled,
+        config=build_config_response(),
+    )
+
+
+def reset_agent_token() -> TokenResetResponse:
+    config_values = persisted_config_values()
+    next_token = generate_agent_token()
+    allow_self_restart = env_flag(
+        config_values.get("ALLOW_SELF_RESTART"),
+        default=SETTINGS.allow_self_restart,
+    )
+    config_values["AGENT_TOKEN"] = next_token
+
+    try:
+        save_config_values(config_values)
+    except (OSError, sqlite3.Error) as exc:
+        raise HTTPException(status_code=500, detail=f"failed to persist config: {exc}") from exc
+
+    restart_required = runtime_restart_needed(config_values)
+    restart_scheduled = False
+    if restart_required:
+        restart_scheduled = schedule_service_restart(
+            SETTINGS.agent_service_name,
+            allow_restart=allow_self_restart,
+        )
+
+    message = "agent token has been rotated"
+    if restart_required and restart_scheduled:
+        message = "agent token has been rotated; agent restart has been scheduled"
+    elif restart_required:
+        message = "agent token has been rotated; restart required to apply changes"
+
+    return TokenResetResponse(
+        message=message,
+        token=next_token,
         restart_required=restart_required,
         restart_scheduled=restart_scheduled,
         config=build_config_response(),

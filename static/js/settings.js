@@ -3,6 +3,7 @@ import {
   escapeHtml,
   metricCard,
   normalizeFeatureError,
+  persistToken,
   request,
   setAccessPlaceholder,
   setConfigPlaceholder,
@@ -11,6 +12,8 @@ import {
   state,
   updateHeroAccess,
 } from "./shared.js";
+
+const TOKEN_SWITCH_DELAY_MS = 7000;
 
 function isLikelyRestartInterruption(error) {
   const message = String(error?.message || "").toLowerCase();
@@ -306,6 +309,57 @@ export async function saveConfig(event) {
       showStatus("请求在服务重启时中断，请等待几秒后刷新页面确认配置是否生效。", "info");
       return;
     }
+    showStatus(error.message, "error");
+  }
+}
+
+async function copyTokenToClipboard(token) {
+  if (!navigator.clipboard?.writeText) {
+    return false;
+  }
+  try {
+    await navigator.clipboard.writeText(token);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function revealToken(token) {
+  window.prompt("新 AGENT_TOKEN，仅显示这一次，请立即保存：", token);
+}
+
+export async function resetAgentToken() {
+  if (!window.confirm("重置后旧令牌会失效，继续吗？")) {
+    return;
+  }
+
+  try {
+    const payload = await request("/api/config/reset-token", {
+      method: "POST",
+    });
+    const copied = await copyTokenToClipboard(payload.token);
+
+    if (payload.restart_scheduled) {
+      showStatus(
+        copied
+          ? "令牌已重置，新令牌已复制到剪贴板；页面会在服务重启后自动切换。"
+          : "令牌已重置；请立即保存新令牌，页面会在服务重启后自动切换。",
+        "info"
+      );
+      window.setTimeout(() => {
+        persistToken(payload.token);
+        window.location.reload();
+      }, TOKEN_SWITCH_DELAY_MS);
+      return;
+    }
+
+    revealToken(payload.token);
+    showStatus(
+      "令牌已重置，但服务未自动重启。请执行 sudo file-panel restart，然后使用新令牌重新登录。",
+      "info"
+    );
+  } catch (error) {
     showStatus(error.message, "error");
   }
 }

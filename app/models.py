@@ -239,6 +239,14 @@ class ConfigUpdateResponse(BaseModel):
     config: ConfigResponse
 
 
+class TokenResetResponse(BaseModel):
+    message: str
+    token: str
+    restart_required: bool
+    restart_scheduled: bool
+    config: ConfigResponse
+
+
 class RenameFileRequest(BaseModel):
     old_path: str
     new_path: str

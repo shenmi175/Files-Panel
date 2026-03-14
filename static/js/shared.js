@@ -48,6 +48,7 @@ export const dom = {
   configAgentRootInput: document.getElementById("config-agent-root"),
   configPortInput: document.getElementById("config-port"),
   configAgentTokenInput: document.getElementById("config-agent-token"),
+  configResetTokenButton: document.getElementById("config-reset-token"),
   configCertbotEmailInput: document.getElementById("config-certbot-email"),
   configAllowPublicInput: document.getElementById("config-allow-public"),
   configAllowRestartInput: document.getElementById("config-allow-restart"),
