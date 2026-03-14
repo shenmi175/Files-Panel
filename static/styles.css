@@ -323,15 +323,36 @@ h3 {
 
 .resource-stack {
   display: grid;
+  gap: 18px;
+}
+
+.resource-section {
+  display: grid;
   gap: 14px;
 }
 
-.metric-grid-priority {
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+.resource-section-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-end;
 }
 
-.metric-grid-support {
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+.resource-section-head p.muted {
+  max-width: 320px;
+  text-align: right;
+}
+
+.metric-grid-ring {
+  grid-template-columns: repeat(auto-fit, minmax(214px, 1fr));
+}
+
+.metric-grid-context {
+  grid-template-columns: minmax(280px, 1.2fr) minmax(230px, 0.8fr);
+}
+
+.metric-grid-throughput {
+  grid-template-columns: repeat(2, minmax(300px, 1fr));
 }
 
 .metric-card {
@@ -346,6 +367,18 @@ h3 {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+}
+
+.metric-card.is-meter {
+  min-height: 156px;
+}
+
+.metric-card.is-text {
+  min-height: 132px;
+}
+
+.metric-card.is-text .metric-body {
+  align-items: flex-start;
 }
 
 .metric-copy {
@@ -363,6 +396,15 @@ h3 {
 
 .metric-card small {
   line-height: 1.5;
+}
+
+.metric-card-emphasis .metric-copy strong {
+  font-size: 28px;
+  line-height: 1.12;
+}
+
+.metric-card-emphasis .metric-copy small {
+  font-size: 14px;
 }
 
 .metric-ring {
@@ -945,6 +987,11 @@ h3 {
   .resource-detail-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .metric-grid-context,
+  .metric-grid-throughput {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 980px) {
@@ -976,7 +1023,8 @@ h3 {
 
   .hero-top,
   .section-head,
-  .chart-head {
+  .chart-head,
+  .resource-section-head {
     flex-direction: column;
     align-items: stretch;
   }
@@ -1015,5 +1063,10 @@ h3 {
   .view-tab,
   .log-level-tab {
     min-width: 0;
+  }
+
+  .resource-section-head p.muted {
+    max-width: none;
+    text-align: left;
   }
 }

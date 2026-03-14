@@ -203,24 +203,33 @@ export function renderResources(snapshot, docker) {
       ? `${docker.running_count} 个运行中容器`
       : "未检测到运行中的容器"
     : docker?.message || "docker 不可用";
-  const dockerNote =
-    docker?.available && docker.containers?.length
-      ? docker.containers
+  const dockerNote = docker?.available
+    ? docker.containers?.length
+      ? `守护进程可用 · ${docker.containers
           .slice(0, 2)
           .map((item) => item.name)
-          .join(" · ")
-      : "容器运行态已并入资源页";
+          .join(" · ")}`
+      : "守护进程可用 · 当前没有运行中的容器"
+    : docker?.message || "未检测到 docker 守护进程";
+  const dockerMeter = docker?.available ? 100 : 0;
+  const dockerMeterLabel = docker?.available
+    ? docker.running_count > 0
+      ? String(docker.running_count)
+      : "OK"
+    : "OFF";
 
   dom.resourcesEl.className = "resource-stack";
   dom.resourcesEl.innerHTML = `
-    <div class="metric-grid metric-grid-priority">
+    <section class="resource-section">
+      <div class="resource-section-head">
+        <div>
+          <p class="section-kicker">Health</p>
+          <h3>容量与健康</h3>
+        </div>
+        <p class="muted">负载、容量和运行时健康度</p>
+      </div>
+      <div class="metric-grid metric-grid-ring">
       ${[
-        metricCard({
-          label: "主机与运行时",
-          value: snapshot.hostname,
-          note: `${snapshot.uptime} · ${cpuCount ? `${cpuCount} vCPU` : "等待 CPU 信息"}`,
-          tone: "tone-accent",
-        }),
         metricCard({
           label: "CPU 利用率",
           value: cpuUsedPercent === null ? "等待采样" : formatPercent(cpuUsedPercent),
@@ -246,16 +255,6 @@ export function renderResources(snapshot, docker) {
           tone: "tone-amber",
         }),
         metricCard({
-          label: "Docker",
-          value: dockerSummary,
-          note: dockerNote,
-          tone: "tone-olive",
-        }),
-      ].join("")}
-    </div>
-    <div class="metric-grid metric-grid-support">
-      ${[
-        metricCard({
           label: "Load",
           value: `${snapshot.load_average.one.toFixed(2)} / ${snapshot.load_average.five.toFixed(2)} / ${snapshot.load_average.fifteen.toFixed(2)}`,
           note:
@@ -273,23 +272,39 @@ export function renderResources(snapshot, docker) {
           tone: "tone-olive",
         }),
         metricCard({
-          label: "网络吞吐",
-          value: `↓ ${formatRate(downloadRate)} / ↑ ${formatRate(uploadRate)}`,
-          note: "全网卡聚合实时速率",
-          tone: "tone-green",
-        }),
-        metricCard({
-          label: "磁盘 I/O",
-          value: `读 ${formatRate(diskReadRate)} / 写 ${formatRate(diskWriteRate)}`,
-          note: "块设备聚合实时速率",
-          tone: "tone-amber",
-        }),
-        metricCard({
           label: "Inode",
           value: `${formatCount(inode.used)} / ${formatCount(inode.total)}`,
           note: `${inode.mount_point} · 文件节点占用`,
           meter: inodeUsedPercent,
           tone: "tone-green",
+        }),
+        metricCard({
+          label: "Docker 状态",
+          value: dockerSummary,
+          note: dockerNote,
+          meter: dockerMeter,
+          meterLabel: dockerMeterLabel,
+          tone: "tone-olive",
+        }),
+      ].join("")}
+      </div>
+    </section>
+    <section class="resource-section">
+      <div class="resource-section-head">
+        <div>
+          <p class="section-kicker">Context</p>
+          <h3>运行概况</h3>
+        </div>
+        <p class="muted">节点身份与连接状态</p>
+      </div>
+      <div class="metric-grid metric-grid-context">
+      ${[
+        metricCard({
+          label: "主机与运行时",
+          value: snapshot.hostname,
+          note: `${snapshot.uptime} · ${cpuCount ? `${cpuCount} vCPU` : "等待 CPU 信息"}`,
+          tone: "tone-accent",
+          cardClass: "metric-card-emphasis",
         }),
         metricCard({
           label: "进程 / 连接",
@@ -298,7 +313,35 @@ export function renderResources(snapshot, docker) {
           tone: "tone-accent",
         }),
       ].join("")}
-    </div>
+      </div>
+    </section>
+    <section class="resource-section">
+      <div class="resource-section-head">
+        <div>
+          <p class="section-kicker">Throughput</p>
+          <h3>吞吐与 I/O</h3>
+        </div>
+        <p class="muted">网络与磁盘的实时速率</p>
+      </div>
+      <div class="metric-grid metric-grid-throughput">
+        ${[
+          metricCard({
+            label: "网络吞吐",
+            value: `下行 ${formatRate(downloadRate)} · 上行 ${formatRate(uploadRate)}`,
+            note: "全网卡聚合实时速率",
+            tone: "tone-green",
+            cardClass: "metric-card-emphasis",
+          }),
+          metricCard({
+            label: "磁盘 I/O",
+            value: `读取 ${formatRate(diskReadRate)} · 写入 ${formatRate(diskWriteRate)}`,
+            note: "块设备聚合实时速率",
+            tone: "tone-amber",
+            cardClass: "metric-card-emphasis",
+          }),
+        ].join("")}
+      </div>
+    </section>
   `;
 
   state.docker = docker;

@@ -214,11 +214,19 @@ export function formatPercent(value) {
   return `${Number(value).toFixed(0)}%`;
 }
 
-export function metricCard({ label, value, note, meter = null, tone = "" }) {
+export function metricCard({ label, value, note, meter = null, meterLabel = null, tone = "", cardClass = "" }) {
   const meterWidth =
     meter === null ? null : meter <= 0 ? 0 : Math.max(4, Math.min(100, meter));
+  const cardClasses = [
+    "metric-card",
+    tone,
+    meterWidth === null ? "is-text" : "is-meter",
+    cardClass,
+  ]
+    .filter(Boolean)
+    .join(" ");
   return `
-    <div class="metric-card ${tone}">
+    <div class="${cardClasses}">
       <div class="metric-body">
         <div class="metric-copy">
           <span>${escapeHtml(label)}</span>
@@ -230,7 +238,7 @@ export function metricCard({ label, value, note, meter = null, tone = "" }) {
             ? ""
             : `
               <div class="metric-ring" style="--percent:${meterWidth}">
-                <span>${escapeHtml(formatPercent(meter))}</span>
+                <span>${escapeHtml(meterLabel ?? formatPercent(meter))}</span>
               </div>
             `
         }
