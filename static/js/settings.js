@@ -12,6 +12,16 @@ import {
   updateHeroAccess,
 } from "./shared.js";
 
+function isLikelyRestartInterruption(error) {
+  const message = String(error?.message || "").toLowerCase();
+  return (
+    message.includes("failed to fetch")
+    || message.includes("networkerror")
+    || message.includes("load failed")
+    || message.includes("network request failed")
+  );
+}
+
 export function renderAccess(payload) {
   state.access = payload;
   updateHeroAccess();
@@ -247,6 +257,10 @@ export async function configureDomain(event) {
     );
     await refreshSettings().catch(() => {});
   } catch (error) {
+    if (isLikelyRestartInterruption(error)) {
+      showStatus("请求在服务重启时中断，请等待几秒后刷新页面确认域名接入状态。", "info");
+      return;
+    }
     showStatus(error.message, "error");
   }
 }
@@ -288,6 +302,10 @@ export async function saveConfig(event) {
       payload.restart_required ? "info" : "success"
     );
   } catch (error) {
+    if (dom.configAllowRestartInput.checked && isLikelyRestartInterruption(error)) {
+      showStatus("请求在服务重启时中断，请等待几秒后刷新页面确认配置是否生效。", "info");
+      return;
+    }
     showStatus(error.message, "error");
   }
 }

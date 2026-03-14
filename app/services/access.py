@@ -29,6 +29,7 @@ from app.services.common import (
 
 COMMAND_TIMEOUT_SECONDS = 15
 CERTBOT_TIMEOUT_SECONDS = 300
+SERVICE_RESTART_DELAY_SECONDS = 5
 
 
 def default_config_values() -> dict[str, str]:
@@ -168,7 +169,7 @@ def schedule_service_restart(service_name: str | None, *, allow_restart: bool | 
         [
             "/bin/sh",
             "-c",
-            f"sleep 2 && systemctl restart {shlex.quote(service_name)} >/dev/null 2>&1",
+            f"sleep {SERVICE_RESTART_DELAY_SECONDS} && systemctl restart {shlex.quote(service_name)} >/dev/null 2>&1",
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
