@@ -282,10 +282,11 @@ function renderResourceBreakdowns(snapshot, dockerSummary) {
 
   dom.resourceBreakdownsEl.className = "resource-detail-grid";
   dom.resourceBreakdownsEl.innerHTML = `
+    ${renderDockerCard(dockerSummary)}
     <article class="detail-card">
       <div class="detail-head">
         <div>
-          <h3>网卡分项</h3>
+          <h3>网卡</h3>
           <p class="muted">按网卡展示当前节点的实时上下行速率。</p>
         </div>
       </div>
@@ -303,11 +304,10 @@ function renderResourceBreakdowns(snapshot, dockerSummary) {
         )}
       </div>
     </article>
-    ${renderDockerCard(dockerSummary)}
     <article class="detail-card">
       <div class="detail-head">
         <div>
-          <h3>磁盘分项</h3>
+          <h3>磁盘</h3>
           <p class="muted">按块设备展示当前节点的实时读写速率。</p>
         </div>
       </div>

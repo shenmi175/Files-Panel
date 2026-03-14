@@ -13,8 +13,8 @@
           <p class="eyebrow">Python + FastAPI Control Plane</p>
           <h1>文件与资源控制面板</h1>
           <p class="muted">
-            访问令牌仅在提交登录时使用，浏览器不再保存原始令牌。登录成功后由服务端签发
-            <code>HttpOnly</code> 会话。
+            输入访问令牌后建立受保护会话。登录状态保存在服务端，
+            浏览器仅持有 <code>HttpOnly</code> 会话 Cookie。
           </p>
         </div>
 
@@ -33,8 +33,8 @@
         </form>
 
         <div class="login-notes">
-          <p class="muted">登录后才会加载节点信息、文件工作区、接入配置和运行日志。</p>
-          <p class="muted">切换或重置令牌后，当前会话会自动失效，需要重新登录。</p>
+          <p class="muted">登录后可以访问当前节点的资源、文件、接入和日志。</p>
+          <p class="muted">远程节点当前只做目录登记，不会在本页面直接执行远程操作。</p>
         </div>
 
         <div id="login-message" class="auth-feedback hidden"></div>
@@ -42,336 +42,356 @@
     </section>
 
     <main id="app-shell" class="app-shell hidden">
-      <header class="panel hero">
-        <div class="hero-top">
-          <div class="hero-copy">
-            <p class="eyebrow">Python + FastAPI Control Plane</p>
-            <h1>文件与资源控制面板</h1>
-            <p class="muted">
-              管理当前节点的资源、文件、接入和日志。远程节点当前仅登记，不执行远程操作。
-            </p>
-            <p class="hero-note">
-              初次安装可先通过 <code>IP:端口</code> 临时访问；接入域名后会切回本地监听，
-              由 nginx 负责对外入口。
-            </p>
+      <div class="workspace-shell">
+        <aside class="panel sidebar">
+          <div class="sidebar-brand">
+            <p class="eyebrow">Node Workspace</p>
+            <h2>控制菜单</h2>
+            <p class="muted">左侧负责导航，右侧专注当前页面内容。</p>
           </div>
 
-          <div class="hero-actions">
-            <nav class="view-switch" aria-label="页面导航">
-              <button id="view-overview" class="view-tab is-active" data-view="overview">概览</button>
-              <button id="view-files" class="view-tab" data-view="files">文件</button>
-              <button id="view-access" class="view-tab" data-view="access">接入</button>
-              <button id="view-nodes" class="view-tab" data-view="nodes">节点</button>
-              <button id="view-logs" class="view-tab" data-view="logs">日志</button>
-            </nav>
-            <button id="logout-button" type="button" class="secondary logout-button hidden">退出登录</button>
-          </div>
-        </div>
+          <nav class="view-switch view-switch-sidebar" aria-label="页面导航">
+            <button id="view-overview" class="view-tab is-active" data-view="overview">概览</button>
+            <button id="view-files" class="view-tab" data-view="files">文件</button>
+            <button id="view-access" class="view-tab" data-view="access">接入</button>
+            <button id="view-nodes" class="view-tab" data-view="nodes">节点</button>
+            <button id="view-logs" class="view-tab" data-view="logs">日志</button>
+          </nav>
 
-        <section id="agent-summary" class="summary-strip">
-          <div class="summary-card">
-            <span>当前节点</span>
-            <strong id="agent-name">待登录</strong>
-            <small id="agent-hostname">-</small>
-          </div>
-          <div class="summary-card">
-            <span>运行用户</span>
-            <strong id="agent-user">-</strong>
-            <small>本机服务信息</small>
-          </div>
-          <div class="summary-card">
-            <span>访问入口</span>
-            <strong id="agent-entry">等待登录</strong>
-            <small id="agent-auth">需要会话登录后才会加载节点信息</small>
-          </div>
-        </section>
-      </header>
-
-      <div id="status" class="status hidden"></div>
-
-      <section id="overview-view" class="view is-active">
-        <article class="panel section-panel resource-panel">
-          <div class="section-head">
-            <div>
-              <p class="section-kicker">Runtime</p>
-              <h2>资源概览</h2>
-              <p class="muted">查看当前节点的资源、Docker、网络、磁盘和趋势采样。</p>
+          <div class="sidebar-notes">
+            <div class="sidebar-note-card">
+              <span>当前模式</span>
+              <strong>本机 Agent</strong>
+              <small>所有资源、文件和运行态都来自当前节点。</small>
             </div>
-            <div class="section-actions">
-              <span id="chart-range" class="ghost-chip">等待采样</span>
-              <button id="refresh-dashboard" class="secondary">刷新</button>
+            <div class="sidebar-note-card">
+              <span>远程节点</span>
+              <strong>登记为先</strong>
+              <small>后续可接 manager 或 WireGuard 内网代理。</small>
             </div>
           </div>
 
-          <div id="resources" class="metric-grid empty">登录后加载资源概览</div>
-          <div id="resource-breakdowns" class="resource-detail-grid empty">登录后加载资源分项</div>
+          <button id="logout-button" type="button" class="secondary logout-button hidden">退出登录</button>
+        </aside>
 
-          <div class="chart-panel">
-            <div class="chart-head">
-              <div>
-                <h3>资源趋势</h3>
-                <p id="chart-caption" class="muted">登录后加载趋势采样</p>
-              </div>
-              <div id="chart-legend" class="legend"></div>
-            </div>
-            <div id="resource-chart" class="chart empty">等待趋势图</div>
-          </div>
-        </article>
-      </section>
-
-      <section id="files-view" class="view hidden">
-        <article class="panel section-panel files-workspace">
-          <div class="section-head">
-            <div>
-              <p class="section-kicker">Files</p>
-              <h2>文件工作区</h2>
-              <p id="active-path" class="muted">等待目录信息</p>
-            </div>
-            <div class="section-actions">
-              <span class="ghost-chip">双击目录进入，单击条目后再执行操作</span>
-              <button id="go-up" class="secondary">上一级</button>
-            </div>
-          </div>
-
-          <div class="file-header">
-            <div class="path-stack">
-              <div id="path-breadcrumbs" class="breadcrumbs"></div>
-              <p class="toolbar-note">名称、类型、大小和修改时间会同时显示，便于快速确认当前条目。</p>
-            </div>
-            <label class="toggle">
-              <input id="show-hidden-toggle" type="checkbox" />
-              <span>显示隐藏文件</span>
-            </label>
-          </div>
-
-          <div class="toolbar">
-            <label class="file-picker secondary">
-              <input id="upload-input" type="file" />
-              <span>选择文件</span>
-            </label>
-            <button id="upload-button">上传到当前目录</button>
-            <button id="create-dir-button" class="secondary">新建目录</button>
-            <button id="rename-button" class="secondary">重命名所选项</button>
-            <button id="download-button" class="secondary">下载所选项</button>
-            <button id="delete-button" class="secondary danger">删除所选项</button>
-          </div>
-
-          <div class="files-table-head" aria-hidden="true">
-            <span>名称</span>
-            <span>类型 / 权限</span>
-            <span>大小</span>
-            <span>修改时间</span>
-          </div>
-          <div id="files" class="file-list empty">登录后加载文件列表</div>
-        </article>
-      </section>
-
-      <section id="access-view" class="view hidden">
-        <div class="access-grid">
-          <article class="panel section-panel">
-            <div class="section-head">
-              <div>
-                <p class="section-kicker">Access</p>
-                <h2>域名接入</h2>
-                <p id="access-summary" class="muted">登录后读取接入状态</p>
-              </div>
-            </div>
-            <div id="access-cards" class="metric-grid empty">登录后加载接入状态</div>
-
-            <form id="domain-form" class="settings-form compact-form">
-              <label class="field span-2">
-                <span>域名</span>
-                <input
-                  id="domain-input"
-                  placeholder="panel.example.com"
-                  spellcheck="false"
-                  autocomplete="off"
-                />
-              </label>
-              <button id="configure-domain" type="submit">接入域名并启用 HTTPS</button>
-            </form>
-
-            <p class="muted footnote">
-              提交前请确认域名 A/AAAA 记录已指向当前服务器，并且 nginx 可以继续占用
-              <code>80/443</code>。
-            </p>
-          </article>
-
-          <article class="panel section-panel">
-            <div class="section-head">
-              <div>
-                <p class="section-kicker">Config</p>
-                <h2>运行配置</h2>
+        <div class="content-shell">
+          <header class="panel hero hero-compact">
+            <div class="hero-top">
+              <div class="hero-copy">
+                <p class="eyebrow">Python + FastAPI Control Plane</p>
+                <h1>文件与资源控制面板</h1>
                 <p class="muted">
-                  当前配置持久化保存在 SQLite。涉及运行时参数的更新，重启后生效。
+                  当前版本聚焦本机节点管理。概览页查看运行态，文件页处理目录与文件，
+                  接入页管理域名与运行配置，节点页维护远程节点目录。
                 </p>
               </div>
             </div>
 
-            <div id="config-summary" class="metric-grid empty">登录后加载运行配置</div>
-
-            <form id="config-form" class="settings-form">
-              <label class="field">
-                <span>节点名称</span>
-                <input id="config-agent-name" spellcheck="false" />
-              </label>
-
-              <label class="field">
-                <span>监听端口</span>
-                <input id="config-port" type="number" min="1" max="65535" />
-              </label>
-
-              <label class="field">
-                <span>采样间隔</span>
-                <select id="config-sample-interval">
-                  <option value="5">5 秒</option>
-                  <option value="10">10 秒</option>
-                  <option value="15">15 秒</option>
-                </select>
-              </label>
-
-              <label class="field span-2">
-                <span>根目录</span>
-                <input id="config-agent-root" spellcheck="false" />
-                <small class="field-hint">文件页只会展示并操作这个目录以内的内容。</small>
-              </label>
-
-              <label class="field span-2">
-                <span>访问令牌</span>
-                <input
-                  id="config-agent-token"
-                  type="password"
-                  placeholder="留空表示保持不变，填写后会更新为新令牌"
-                  spellcheck="false"
-                  autocomplete="new-password"
-                />
-                <small class="field-hint">当前不会回显已有令牌，避免在页面中暴露。</small>
-              </label>
-
-              <label class="field span-2">
-                <span>Certbot 邮箱</span>
-                <input
-                  id="config-certbot-email"
-                  type="email"
-                  placeholder="可选，用于证书续期通知"
-                  spellcheck="false"
-                />
-              </label>
-
-              <label class="toggle card-toggle">
-                <input id="config-allow-public" type="checkbox" />
-                <span>允许临时通过 IP:端口 访问</span>
-              </label>
-
-              <label class="toggle card-toggle">
-                <input id="config-allow-restart" type="checkbox" />
-                <span>保存后自动重启服务以应用配置</span>
-              </label>
-
-              <div class="form-actions span-2">
-                <button id="save-config" type="submit">保存运行配置</button>
-                <button id="config-reset-token" type="button" class="secondary">重置令牌</button>
+            <section id="agent-summary" class="summary-strip">
+              <div class="summary-card">
+                <span>当前节点</span>
+                <strong id="agent-name">待登录</strong>
+                <small id="agent-hostname">-</small>
               </div>
-            </form>
-          </article>
-        </div>
-      </section>
+              <div class="summary-card">
+                <span>运行用户</span>
+                <strong id="agent-user">-</strong>
+                <small>当前服务身份</small>
+              </div>
+              <div class="summary-card">
+                <span>访问入口</span>
+                <strong id="agent-entry">待登录</strong>
+                <small id="agent-auth">登录后显示当前节点访问状态</small>
+              </div>
+            </section>
+          </header>
 
-      <section id="nodes-view" class="view hidden">
-        <div class="nodes-grid">
-          <article class="panel section-panel node-editor-panel">
-            <div class="section-head">
-              <div>
-                <p class="section-kicker">Nodes</p>
-                <h2>节点目录</h2>
-                <p class="muted">
-                  登记远程节点地址、访问令牌和 WireGuard 管理地址。当前不会代管远程执行。
+          <div id="status" class="status hidden"></div>
+
+          <section id="overview-view" class="view is-active">
+            <article class="panel section-panel resource-panel">
+              <div class="section-head">
+                <div>
+                  <p class="section-kicker">Runtime</p>
+                  <h2>资源概览</h2>
+                  <p class="muted">按纵向分区查看容量与健康、运行概况、Docker、网卡、磁盘和趋势。</p>
+                </div>
+                <div class="section-actions">
+                  <span id="chart-range" class="ghost-chip">等待采样</span>
+                  <button id="refresh-dashboard" class="secondary">刷新</button>
+                </div>
+              </div>
+
+              <div id="resources" class="metric-grid empty">正在加载资源概览...</div>
+              <div id="resource-breakdowns" class="resource-detail-grid empty">正在加载资源分项...</div>
+
+              <div class="chart-panel">
+                <div class="chart-head">
+                  <div>
+                    <p class="section-kicker">Trend</p>
+                    <h3>趋势</h3>
+                    <p id="chart-caption" class="muted">等待历史采样点</p>
+                  </div>
+                  <div id="chart-legend" class="legend"></div>
+                </div>
+                <div id="resource-chart" class="chart empty">等待趋势数据</div>
+              </div>
+            </article>
+          </section>
+
+          <section id="files-view" class="view hidden">
+            <article class="panel section-panel files-workspace">
+              <div class="section-head">
+                <div>
+                  <p class="section-kicker">Files</p>
+                  <h2>文件工作区</h2>
+                  <p id="active-path" class="muted">等待目录信息</p>
+                </div>
+                <div class="section-actions">
+                  <span class="ghost-chip">工具栏固定，文件列表在下方工作区内独立滚动。</span>
+                  <button id="go-up" class="secondary">上一级</button>
+                </div>
+              </div>
+
+              <div class="file-header">
+                <div class="path-stack">
+                  <div id="path-breadcrumbs" class="breadcrumbs"></div>
+                  <p class="toolbar-note">名称、类型、大小和修改时间同时展示，便于快速确认当前条目。</p>
+                </div>
+                <label class="toggle">
+                  <input id="show-hidden-toggle" type="checkbox" />
+                  <span>显示隐藏文件</span>
+                </label>
+              </div>
+
+              <div class="toolbar">
+                <label class="file-picker secondary">
+                  <input id="upload-input" type="file" />
+                  <span>选择文件</span>
+                </label>
+                <button id="upload-button">上传到当前目录</button>
+                <button id="create-dir-button" class="secondary">新建目录</button>
+                <button id="rename-button" class="secondary">重命名所选项</button>
+                <button id="download-button" class="secondary">下载所选项</button>
+                <button id="delete-button" class="secondary danger">删除所选项</button>
+              </div>
+
+              <div class="files-scroll-shell">
+                <div class="files-table-head" aria-hidden="true">
+                  <span>名称</span>
+                  <span>类型 / 权限</span>
+                  <span>大小</span>
+                  <span>修改时间</span>
+                </div>
+                <div id="files" class="file-list empty">正在加载文件列表...</div>
+              </div>
+            </article>
+          </section>
+
+          <section id="access-view" class="view hidden">
+            <div class="access-grid">
+              <article class="panel section-panel">
+                <div class="section-head">
+                  <div>
+                    <p class="section-kicker">Access</p>
+                    <h2>域名接入</h2>
+                    <p id="access-summary" class="muted">正在加载接入状态...</p>
+                  </div>
+                </div>
+                <div id="access-cards" class="metric-grid empty">正在加载接入卡片...</div>
+
+                <form id="domain-form" class="settings-form compact-form">
+                  <label class="field span-2">
+                    <span>域名</span>
+                    <input
+                      id="domain-input"
+                      placeholder="panel.example.com"
+                      spellcheck="false"
+                      autocomplete="off"
+                    />
+                  </label>
+                  <button id="configure-domain" type="submit">接入域名并启用 HTTPS</button>
+                </form>
+
+                <p class="muted footnote">
+                  提交前请确认域名 A/AAAA 记录已经指向当前服务器，并且 nginx 可以继续占用
+                  <code>80/443</code>。
                 </p>
-              </div>
+              </article>
+
+              <article class="panel section-panel">
+                <div class="section-head">
+                  <div>
+                    <p class="section-kicker">Config</p>
+                    <h2>运行配置</h2>
+                    <p class="muted">运行配置持久化到 SQLite。涉及运行参数的更新，重启后生效。</p>
+                  </div>
+                </div>
+
+                <div id="config-summary" class="metric-grid empty">正在加载运行配置...</div>
+
+                <form id="config-form" class="settings-form">
+                  <label class="field">
+                    <span>节点名称</span>
+                    <input id="config-agent-name" spellcheck="false" />
+                  </label>
+
+                  <label class="field">
+                    <span>监听端口</span>
+                    <input id="config-port" type="number" min="1" max="65535" />
+                  </label>
+
+                  <label class="field">
+                    <span>采样间隔</span>
+                    <select id="config-sample-interval">
+                      <option value="5">5 秒</option>
+                      <option value="10">10 秒</option>
+                      <option value="15">15 秒</option>
+                    </select>
+                  </label>
+
+                  <label class="field span-2">
+                    <span>根目录</span>
+                    <input id="config-agent-root" spellcheck="false" />
+                    <small class="field-hint">文件页只会显示根目录以内的内容，根目录之外不会被访问。</small>
+                  </label>
+
+                  <label class="field span-2">
+                    <span>访问令牌</span>
+                    <input
+                      id="config-agent-token"
+                      type="password"
+                      placeholder="留空表示保持当前令牌不变"
+                      spellcheck="false"
+                      autocomplete="new-password"
+                    />
+                    <small class="field-hint">页面不会回显服务器中已有令牌，填写后将替换成新令牌。</small>
+                  </label>
+
+                  <label class="field span-2">
+                    <span>Certbot 邮箱</span>
+                    <input
+                      id="config-certbot-email"
+                      type="email"
+                      placeholder="可选，用于证书续期通知"
+                      spellcheck="false"
+                    />
+                  </label>
+
+                  <label class="toggle card-toggle">
+                    <input id="config-allow-public" type="checkbox" />
+                    <span>允许通过 IP:端口 直接访问</span>
+                  </label>
+
+                  <label class="toggle card-toggle">
+                    <input id="config-allow-restart" type="checkbox" />
+                    <span>允许自动重启应用参数</span>
+                  </label>
+
+                  <div class="form-actions span-2">
+                    <button id="save-config" type="submit">保存运行配置</button>
+                    <button id="config-reset-token" type="button" class="secondary">重置令牌</button>
+                  </div>
+                </form>
+              </article>
             </div>
+          </section>
 
-            <form id="server-form" class="settings-form">
-              <input id="server-id" type="hidden" />
+          <section id="nodes-view" class="view hidden">
+            <div class="nodes-grid">
+              <article class="panel section-panel node-editor-panel">
+                <div class="section-head">
+                  <div>
+                    <p class="section-kicker">Nodes</p>
+                    <h2>节点目录</h2>
+                    <p class="muted">登记远程节点 URL、访问令牌和 WireGuard 地址。当前不在这里直接执行远程命令。</p>
+                  </div>
+                </div>
 
-              <label class="field">
-                <span>节点名称</span>
-                <input id="server-name" spellcheck="false" placeholder="prod-01" />
-              </label>
+                <form id="server-form" class="settings-form">
+                  <input id="server-id" type="hidden" />
 
-              <label class="field">
-                <span>节点 URL</span>
-                <input id="server-base-url" spellcheck="false" placeholder="https://node.example.com" />
-              </label>
+                  <label class="field">
+                    <span>节点名称</span>
+                    <input id="server-name" spellcheck="false" placeholder="prod-01" />
+                  </label>
 
-              <label class="field">
-                <span>WireGuard 地址</span>
-                <input id="server-wireguard-ip" spellcheck="false" placeholder="10.0.0.2" />
-              </label>
+                  <label class="field">
+                    <span>节点 URL</span>
+                    <input id="server-base-url" spellcheck="false" placeholder="https://node.example.com" />
+                  </label>
 
-              <label class="field">
-                <span>访问令牌</span>
-                <input
-                  id="server-token"
-                  type="password"
-                  spellcheck="false"
-                  placeholder="仅在后续接入远程能力时使用"
-                />
-              </label>
+                  <label class="field">
+                    <span>WireGuard 地址</span>
+                    <input id="server-wireguard-ip" spellcheck="false" placeholder="10.0.0.2" />
+                  </label>
 
-              <label class="toggle card-toggle span-2">
-                <input id="server-enabled" type="checkbox" checked />
-                <span>启用节点</span>
-              </label>
+                  <label class="field">
+                    <span>访问令牌</span>
+                    <input
+                      id="server-token"
+                      type="password"
+                      spellcheck="false"
+                      placeholder="仅在更新远程节点令牌时填写"
+                    />
+                  </label>
 
-              <div class="form-actions span-2">
-                <button id="save-server" type="submit">保存节点</button>
-                <button id="reset-server-form" type="button" class="secondary">重置表单</button>
-              </div>
-            </form>
-          </article>
+                  <label class="toggle card-toggle span-2">
+                    <input id="server-enabled" type="checkbox" checked />
+                    <span>启用节点</span>
+                  </label>
 
-          <article class="panel section-panel node-directory-panel">
-            <div class="section-head">
-              <div>
-                <p class="section-kicker">Directory</p>
-                <h2>节点列表</h2>
-                <p id="servers-summary" class="muted">登录后读取节点目录</p>
-              </div>
+                  <div class="form-actions span-2">
+                    <button id="save-server" type="submit">保存节点</button>
+                    <button id="reset-server-form" type="button" class="secondary">重置表单</button>
+                  </div>
+                </form>
+              </article>
+
+              <article class="panel section-panel node-directory-panel">
+                <div class="section-head">
+                  <div>
+                    <p class="section-kicker">Directory</p>
+                    <h2>节点列表</h2>
+                    <p id="servers-summary" class="muted">正在加载节点目录...</p>
+                  </div>
+                </div>
+
+                <div id="servers-list" class="server-list empty">正在加载节点列表...</div>
+              </article>
             </div>
+          </section>
 
-            <div id="servers-list" class="server-list empty">登录后加载节点列表</div>
-          </article>
+          <section id="logs-view" class="view hidden">
+            <article class="panel section-panel logs-panel">
+              <div class="section-head">
+                <div>
+                  <p class="section-kicker">Logs</p>
+                  <h2>运行日志</h2>
+                  <p class="muted">实时查看当前节点的 systemd 日志，用于排查接入和运行期问题。</p>
+                </div>
+                <div class="section-actions">
+                  <span id="logs-service" class="ghost-chip">等待日志来源</span>
+                  <button id="refresh-logs" class="secondary">刷新</button>
+                </div>
+              </div>
+
+              <div class="logs-meta">
+                <span id="logs-summary" class="ghost-chip">正在加载日志摘要</span>
+                <span id="logs-cursor" class="ghost-chip">尚未建立游标</span>
+              </div>
+
+              <div class="log-level-switch" aria-label="日志级别">
+                <button id="log-level-info" class="log-level-tab is-active" data-level="info">Info</button>
+                <button id="log-level-warning" class="log-level-tab" data-level="warning">Warning</button>
+                <button id="log-level-error" class="log-level-tab" data-level="error">Error</button>
+              </div>
+
+              <div id="logs-output" class="log-stream empty">正在加载日志内容...</div>
+            </article>
+          </section>
         </div>
-      </section>
-
-      <section id="logs-view" class="view hidden">
-        <article class="panel section-panel logs-panel">
-          <div class="section-head">
-            <div>
-              <p class="section-kicker">Logs</p>
-              <h2>运行日志</h2>
-              <p class="muted">实时轮询当前节点的 systemd 日志，用于排查接入和运行期问题。</p>
-            </div>
-            <div class="section-actions">
-              <span id="logs-service" class="ghost-chip">等待日志</span>
-              <button id="refresh-logs" class="secondary">刷新</button>
-            </div>
-          </div>
-
-          <div class="logs-meta">
-            <span id="logs-summary" class="ghost-chip">登录后读取日志流</span>
-            <span id="logs-cursor" class="ghost-chip">尚未建立游标</span>
-          </div>
-
-          <div class="log-level-switch" aria-label="日志级别">
-            <button id="log-level-info" class="log-level-tab is-active" data-level="info">Info</button>
-            <button id="log-level-warning" class="log-level-tab" data-level="warning">Warning</button>
-            <button id="log-level-error" class="log-level-tab" data-level="error">Error</button>
-          </div>
-
-          <div id="logs-output" class="log-stream empty">登录后加载日志输出</div>
-        </article>
-      </section>
+      </div>
     </main>
 
     <script type="module" src="/js/app.js"></script>
