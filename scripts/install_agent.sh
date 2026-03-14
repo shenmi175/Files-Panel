@@ -178,7 +178,9 @@ elif [[ "$ROOT_VALUE" == "$AGENT_ROOT_BASE" || "$ROOT_VALUE" == "$AGENT_ROOT_BAS
 fi
 
 if [[ -d "$ROOT_VALUE" ]]; then
-  "$HELPER_INSTALL_PATH" grant-path-access "$ROOT_VALUE"
+  if ! "$HELPER_INSTALL_PATH" grant-path-access "$ROOT_VALUE"; then
+    echo "跳过自动授权: ${ROOT_VALUE}" >&2
+  fi
 fi
 
 cat >"$ENV_FILE" <<EOF

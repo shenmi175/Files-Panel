@@ -15,6 +15,8 @@ read_env_value() {
 
 DOMAIN_RE='^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$'
 SERVICE_RE='^[A-Za-z0-9@._-]+$'
+SENSITIVE_DIRS=(".ssh" ".gnupg" ".pki" ".aws" ".kube")
+SENSITIVE_FILES=("id_rsa" "id_ed25519" "id_dsa" "id_ecdsa" "authorized_keys" "known_hosts")
 
 require_domain() {
   local domain="$1"
@@ -81,11 +83,31 @@ require_existing_path() {
 validate_grant_target() {
   local target="$1"
   case "$target" in
-    /|/proc|/sys|/dev)
+    /|/proc|/proc/*|/sys|/sys/*|/dev|/dev/*|/etc|/etc/*|/boot|/boot/*|/run|/run/*|/var/run|/var/run/*|/root|/root/*)
       echo "refusing to grant access to protected path: $target" >&2
       exit 2
       ;;
   esac
+
+  local component
+  IFS='/' read -r -a parts <<<"$target"
+  for component in "${parts[@]}"; do
+    for sensitive_dir in "${SENSITIVE_DIRS[@]}"; do
+      if [[ "$component" == "$sensitive_dir" ]]; then
+        echo "refusing to grant access to sensitive path: $target" >&2
+        exit 2
+      fi
+    done
+  done
+
+  local base_name
+  base_name="$(basename "$target")"
+  for sensitive_file in "${SENSITIVE_FILES[@]}"; do
+    if [[ "$base_name" == "$sensitive_file" ]]; then
+      echo "refusing to grant access to sensitive file: $target" >&2
+      exit 2
+    fi
+  done
 }
 
 grant_parent_traverse() {
@@ -96,6 +118,18 @@ grant_parent_traverse() {
     setfacl -m "u:${SERVICE_USER}:x" "$current"
     current="$(dirname "$current")"
   done
+}
+
+grant_directory_tree_access() {
+  local target="$1"
+  find "$target" \
+    \( -type d \( -name .ssh -o -name .gnupg -o -name .pki -o -name .aws -o -name .kube \) -prune \) \
+    -o -type d -print0 | xargs -0 -r setfacl -m "u:${SERVICE_USER}:rwx" -m "d:u:${SERVICE_USER}:rwx"
+
+  find "$target" \
+    \( -type d \( -name .ssh -o -name .gnupg -o -name .pki -o -name .aws -o -name .kube \) -prune \) \
+    -o \( -type f \( -name id_rsa -o -name id_ed25519 -o -name id_dsa -o -name id_ecdsa -o -name authorized_keys -o -name known_hosts \) -prune \) \
+    -o -type f -print0 | xargs -0 -r setfacl -m "u:${SERVICE_USER}:rw"
 }
 
 grant_path_access() {
@@ -112,14 +146,39 @@ grant_path_access() {
   grant_parent_traverse "$target"
 
   if [[ -d "$target" ]]; then
-    setfacl -R -m "u:${SERVICE_USER}:rwx" "$target"
-    find "$target" -type d -exec setfacl -m "d:u:${SERVICE_USER}:rwx" "{}" +
-    setfacl -m "u:${SERVICE_USER}:rwx" "$target"
-    setfacl -m "d:u:${SERVICE_USER}:rwx" "$target"
+    grant_directory_tree_access "$target"
     return
   fi
 
   setfacl -m "u:${SERVICE_USER}:rw" "$target"
+}
+
+revoke_path_access() {
+  local target_raw="$1"
+  local target
+  require_existing_path "$target_raw"
+  if ! command -v setfacl >/dev/null 2>&1; then
+    echo "setfacl is not installed; install acl first" >&2
+    exit 2
+  fi
+
+  target="$(realpath "$target_raw")"
+  if [[ -d "$target" ]]; then
+    while IFS= read -r -d '' directory; do
+      setfacl -x "u:${SERVICE_USER}" "$directory" 2>/dev/null || true
+      setfacl -x "d:u:${SERVICE_USER}" "$directory" 2>/dev/null || true
+    done < <(find "$target" -type d -print0)
+
+    while IFS= read -r -d '' file_path; do
+      setfacl -x "u:${SERVICE_USER}" "$file_path" 2>/dev/null || true
+    done < <(find "$target" -type f -print0)
+
+    setfacl -x "u:${SERVICE_USER}" "$target" 2>/dev/null || true
+    setfacl -x "d:u:${SERVICE_USER}" "$target" 2>/dev/null || true
+    return
+  fi
+
+  setfacl -x "u:${SERVICE_USER}" "$target" 2>/dev/null || true
 }
 
 write_nginx_site() {
@@ -264,6 +323,9 @@ case "$command" in
     ;;
   grant-path-access)
     grant_path_access "${1:-}"
+    ;;
+  revoke-path-access)
+    revoke_path_access "${1:-}"
     ;;
   *)
     echo "unknown helper command: ${command}" >&2

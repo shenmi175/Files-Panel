@@ -222,11 +222,17 @@ def ensure_agent_root_access(agent_root: Path) -> None:
             detail="agent root is not accessible by the service user and privileged helper is unavailable",
         )
 
-    run_privileged_helper(
-        ["grant-path-access", str(agent_root)],
-        "grant service access to agent root",
-        timeout_seconds=120,
-    )
+    try:
+        run_privileged_helper(
+            ["grant-path-access", str(agent_root)],
+            "grant service access to agent root",
+            timeout_seconds=120,
+        )
+    except HTTPException as exc:
+        detail = str(exc.detail or "")
+        if "refusing to grant access" in detail or "sensitive path" in detail:
+            raise HTTPException(status_code=400, detail=detail) from exc
+        raise
 
     if not os.access(agent_root, os.R_OK | os.W_OK | os.X_OK):
         raise HTTPException(

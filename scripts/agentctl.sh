@@ -229,6 +229,23 @@ grant_access() {
   echo "已授予 filepanel 访问权限"
 }
 
+revoke_access() {
+  local target="${1:-}"
+  if [[ -z "$target" ]]; then
+    echo "请提供要撤销授权的路径" >&2
+    exit 1
+  fi
+
+  log "撤销目录对 filepanel 的 ACL"
+  echo "目标目录: ${target}"
+  if [[ ! -x /usr/local/libexec/file-panel/file-panel-helper.sh ]]; then
+    echo "privileged helper is not installed" >&2
+    exit 1
+  fi
+  /usr/local/libexec/file-panel/file-panel-helper.sh revoke-path-access "$target"
+  echo "已移除 filepanel 的 ACL"
+}
+
 uninstall_panel() {
   log "卸载 File Panel"
   bash "$UNINSTALL_SCRIPT"
@@ -247,6 +264,7 @@ show_help() {
   logs [n]      查看最近 n 行日志，默认 80 行
   info          输出当前入口、访问令牌和 SQLite 路径
   grant-access  为指定目录授予 filepanel 访问权限；默认使用当前 AGENT_ROOT
+  revoke-access 撤销指定目录对 filepanel 的 ACL 授权
   uninstall     一键卸载 File Panel 及 SQLite 数据
   full-install  首次安装或补系统依赖，然后重启服务
   redeploy      跳过 apt，只同步代码和 Python 依赖，然后重启服务
@@ -257,6 +275,7 @@ show_help() {
   file-panel start
   file-panel restart
   file-panel grant-access /srv/data
+  file-panel revoke-access /root/.ssh/id_ed25519
   file-panel uninstall
 EOF
 }
@@ -312,6 +331,10 @@ case "$command" in
   grant-access)
     ensure_root "$command" "$@"
     grant_access "${1:-}"
+    ;;
+  revoke-access)
+    ensure_root "$command" "$@"
+    revoke_access "${1:-}"
     ;;
   uninstall)
     ensure_root "$command" "$@"
