@@ -27,9 +27,8 @@ import { loadResourcesSection } from "./resources.js";
 import {
   configureDomain,
   handleServersClick,
-  loadConfig,
   loadAccess,
-  loadServers,
+  refreshSettings,
   resetServerForm,
   saveConfig,
   saveServer,
@@ -83,7 +82,7 @@ function scheduleAutoRefresh() {
       }
 
       if (state.activeView === "settings") {
-        await Promise.all([loadAccess(), loadConfig(), loadServers()]);
+        await refreshSettings();
         return;
       }
 
@@ -111,12 +110,15 @@ async function refreshVisibleView({
   forceLogsReset = false,
 } = {}) {
   clearStatus();
+  if (state.activeView === "settings") {
+    await refreshSettings();
+    return;
+  }
+
   const tasks = [loadAccess()];
 
   if (state.activeView === "dashboard") {
     tasks.push(loadDashboardPanel(state.activeDashboardPanel, { forceResourceRefresh }));
-  } else if (state.activeView === "settings") {
-    tasks.push(loadConfig(), loadServers());
   } else if (state.activeView === "logs") {
     tasks.push(loadLogsSection({ reset: forceLogsReset || !state.logsLoaded }));
   }
@@ -137,7 +139,7 @@ async function handleTopLevelViewChange(view) {
   }
 
   if (view === "settings") {
-    await Promise.all([loadAccess(), loadConfig(), loadServers()]);
+    await refreshSettings();
     scheduleAutoRefresh();
     return;
   }

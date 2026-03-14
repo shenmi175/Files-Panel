@@ -6,7 +6,6 @@ import {
   state,
 } from "./shared.js";
 
-
 function renderLogLine(line) {
   return `
     <div class="log-line">
@@ -29,7 +28,6 @@ function renderLogLine(line) {
   `;
 }
 
-
 function renderLogs(payload, { append = false } = {}) {
   dom.logsServiceEl.textContent = payload.service_name || "files-agent";
 
@@ -43,16 +41,18 @@ function renderLogs(payload, { append = false } = {}) {
     dom.logsOutputEl.classList.contains("empty")
     || dom.logsOutputEl.scrollTop + dom.logsOutputEl.clientHeight >= dom.logsOutputEl.scrollHeight - 32;
 
+  const payloadLines = Array.isArray(payload.lines) ? payload.lines : [];
   const nextLines = append
-    ? [...state.logLines, ...payload.lines]
-    : [...payload.lines];
+    ? [...state.logLines, ...payloadLines]
+    : [...payloadLines];
   state.logLines = nextLines.slice(-200);
   state.logsCursor = payload.cursor || state.logsCursor;
   state.logsLoaded = true;
+  const levelFilter = String(payload.level_filter || state.logLevel || "info");
 
   dom.logsSummaryEl.textContent = payload.message
     ? payload.message
-    : `${payload.level_filter.toUpperCase()} · 最近 ${state.logLines.length} / 200 条`;
+    : `${levelFilter.toUpperCase()} · 最近 ${state.logLines.length} / 200 条`;
   dom.logsCursorEl.textContent = state.logsCursor ? "游标已建立" : "游标未建立";
 
   if (!state.logLines.length) {
@@ -68,14 +68,12 @@ function renderLogs(payload, { append = false } = {}) {
   }
 }
 
-
 export function resetLogsState() {
   state.logsLoaded = false;
   state.logsCursor = null;
   state.logLines = [];
   setLogsPlaceholder("输入访问令牌后即可查看实时日志");
 }
-
 
 export async function loadLogsSection({ reset = false } = {}) {
   const params = new URLSearchParams();

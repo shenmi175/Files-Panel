@@ -79,6 +79,9 @@ export function renderConfig(config) {
   dom.configCertbotEmailInput.value = config.certbot_email || "";
   dom.configAllowPublicInput.checked = config.allow_public_ip;
   dom.configAllowRestartInput.checked = config.allow_self_restart;
+  const sampleInterval = Number(config.resource_sample_interval) || state.resourceSampleInterval || 15;
+  const databasePath = config.database_path || "未返回";
+  state.resourceSampleInterval = sampleInterval;
 
   dom.configSummaryEl.className = "metric-grid";
   dom.configSummaryEl.innerHTML = [
@@ -103,7 +106,7 @@ export function renderConfig(config) {
     metricCard({
       label: "令牌 / 存储",
       value: config.token_configured ? "Bearer Token 已配置" : "未配置 Token",
-      note: `采样 ${config.resource_sample_interval} 秒，数据库 ${config.database_path}`,
+      note: `采样 ${sampleInterval} 秒，数据库 ${databasePath}`,
       tone: "tone-olive",
     }),
   ].join("");
@@ -198,7 +201,8 @@ export async function loadConfig() {
 }
 
 export async function loadServers() {
-  renderServers(await request("/api/servers"));
+  const payload = await request("/api/servers");
+  renderServers({ items: Array.isArray(payload?.items) ? payload.items : [] });
 }
 
 export async function refreshSettings({ includeConfig = true, includeServers = true } = {}) {
