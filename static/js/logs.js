@@ -33,7 +33,7 @@ function renderLogs(payload, { append = false } = {}) {
 
   if (!payload.available) {
     state.logsLoaded = false;
-    setLogsPlaceholder(payload.message || "日志暂不可用");
+    setLogsPlaceholder(payload.message || "当前无法读取日志。");
     return;
   }
 
@@ -42,22 +42,20 @@ function renderLogs(payload, { append = false } = {}) {
     || dom.logsOutputEl.scrollTop + dom.logsOutputEl.clientHeight >= dom.logsOutputEl.scrollHeight - 32;
 
   const payloadLines = Array.isArray(payload.lines) ? payload.lines : [];
-  const nextLines = append
-    ? [...state.logLines, ...payloadLines]
-    : [...payloadLines];
+  const nextLines = append ? [...state.logLines, ...payloadLines] : [...payloadLines];
   state.logLines = nextLines.slice(-200);
   state.logsCursor = payload.cursor || state.logsCursor;
   state.logsLoaded = true;
-  const levelFilter = String(payload.level_filter || state.logLevel || "info");
 
+  const levelFilter = String(payload.level_filter || state.logLevel || "info");
   dom.logsSummaryEl.textContent = payload.message
     ? payload.message
     : `${levelFilter.toUpperCase()} · 最近 ${state.logLines.length} / 200 条`;
-  dom.logsCursorEl.textContent = state.logsCursor ? "游标已建立" : "游标未建立";
+  dom.logsCursorEl.textContent = state.logsCursor ? "游标已建立" : "尚未建立游标";
 
   if (!state.logLines.length) {
     dom.logsOutputEl.className = "log-stream empty";
-    dom.logsOutputEl.textContent = payload.message || "暂无日志";
+    dom.logsOutputEl.textContent = payload.message || "当前没有匹配的日志。";
     return;
   }
 
@@ -68,11 +66,11 @@ function renderLogs(payload, { append = false } = {}) {
   }
 }
 
-export function resetLogsState() {
+export function resetLogsState(message = "正在加载日志...") {
   state.logsLoaded = false;
   state.logsCursor = null;
   state.logLines = [];
-  setLogsPlaceholder("输入访问令牌后即可查看实时日志");
+  setLogsPlaceholder(message);
 }
 
 export async function loadLogsSection({ reset = false } = {}) {
@@ -81,6 +79,10 @@ export async function loadLogsSection({ reset = false } = {}) {
   params.set("level", state.logLevel);
   if (!reset && state.logsCursor) {
     params.set("cursor", state.logsCursor);
+  }
+
+  if (reset) {
+    resetLogsState("正在切换日志级别...");
   }
 
   const payload = await request(`/api/runtime/logs?${params.toString()}`);

@@ -112,8 +112,8 @@ export function renderFiles(payload) {
   state.showHidden = payload.show_hidden;
   dom.showHiddenToggle.checked = payload.show_hidden;
   dom.activePathLabel.textContent = payload.show_hidden
-    ? `${payload.current_path} · 已显示隐藏文件`
-    : `${payload.current_path} · 默认隐藏点文件`;
+    ? `${payload.current_path} · 默认显示隐藏文件`
+    : payload.current_path;
   renderBreadcrumbs(payload.current_path, payload.root_path);
 
   if (state.selectedEntry && !payload.entries.some((entry) => entry.path === state.selectedEntry.path)) {
@@ -121,7 +121,7 @@ export function renderFiles(payload) {
   }
 
   if (!payload.entries.length) {
-    setFilesPlaceholder(payload.show_hidden ? "目录为空" : "目录为空，或当前只有隐藏文件");
+    setFilesPlaceholder(payload.show_hidden ? "当前目录为空" : "当前目录为空，隐藏文件未显示");
     return;
   }
 
@@ -169,7 +169,7 @@ export function goUp() {
 export async function uploadFile() {
   const file = dom.uploadInput.files[0];
   if (!file) {
-    showStatus("请选择要上传的文件", "error");
+    showStatus("请先选择要上传的文件。", "error");
     return;
   }
 
@@ -183,7 +183,7 @@ export async function uploadFile() {
     });
     dom.uploadInput.value = "";
     dom.filePickerLabel.textContent = "选择文件";
-    showStatus(`已上传 ${file.name}`, "success");
+    showStatus(`已上传 ${file.name}。`, "success");
     await loadFiles();
   } catch (error) {
     showStatus(error.message, "error");
@@ -204,7 +204,7 @@ export async function createDirectory() {
         path: joinPath(state.currentPath || "/", nextName),
       }),
     });
-    showStatus(`已创建目录 ${nextName}`, "success");
+    showStatus(`已创建目录 ${nextName}。`, "success");
     await loadFiles();
   } catch (error) {
     showStatus(error.message, "error");
@@ -213,11 +213,11 @@ export async function createDirectory() {
 
 export async function renameSelected() {
   if (!state.selectedEntry) {
-    showStatus("请先选择文件或目录", "error");
+    showStatus("请先选择要重命名的项目。", "error");
     return;
   }
 
-  const nextName = window.prompt("输入新名称", state.selectedEntry.name);
+  const nextName = window.prompt("输入新的名称", state.selectedEntry.name);
   if (!nextName || nextName === state.selectedEntry.name) {
     return;
   }
@@ -232,7 +232,7 @@ export async function renameSelected() {
       }),
     });
     state.selectedEntry = null;
-    showStatus(`已重命名为 ${nextName}`, "success");
+    showStatus(`已重命名为 ${nextName}。`, "success");
     await loadFiles();
   } catch (error) {
     showStatus(error.message, "error");
@@ -241,11 +241,11 @@ export async function renameSelected() {
 
 export async function deleteSelected() {
   if (!state.selectedEntry) {
-    showStatus("请先选择文件或目录", "error");
+    showStatus("请先选择要删除的项目。", "error");
     return;
   }
 
-  const confirmed = window.confirm(`确认删除 ${state.selectedEntry.name} ?`);
+  const confirmed = window.confirm(`确认删除 ${state.selectedEntry.name} 吗？`);
   if (!confirmed) {
     return;
   }
@@ -256,7 +256,7 @@ export async function deleteSelected() {
       method: "DELETE",
     });
     state.selectedEntry = null;
-    showStatus(`已删除 ${selectedName}`, "success");
+    showStatus(`已删除 ${selectedName}。`, "success");
     await loadFiles();
   } catch (error) {
     showStatus(error.message, "error");
@@ -265,31 +265,24 @@ export async function deleteSelected() {
 
 export async function downloadSelected() {
   if (!state.selectedEntry) {
-    showStatus("请先选择文件", "error");
+    showStatus("请先选择要下载的文件。", "error");
     return;
   }
   if (state.selectedEntry.type !== "file") {
-    showStatus("下载只支持普通文件", "error");
+    showStatus("当前仅支持下载文件，不支持直接下载目录。", "error");
     return;
   }
 
   try {
-    const response = await fetch(
-      `/api/files/download?path=${encodeURIComponent(state.selectedEntry.path)}`,
-      { credentials: "same-origin" }
-    );
-    if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
-      throw new Error(payload?.detail || "request failed");
-    }
-
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
+    const downloadUrl = `/api/files/download?path=${encodeURIComponent(state.selectedEntry.path)}`;
     const anchor = document.createElement("a");
-    anchor.href = url;
+    anchor.href = downloadUrl;
     anchor.download = state.selectedEntry.name;
+    anchor.rel = "noopener";
+    anchor.style.display = "none";
+    document.body.appendChild(anchor);
     anchor.click();
-    window.URL.revokeObjectURL(url);
+    anchor.remove();
   } catch (error) {
     showStatus(error.message, "error");
   }
