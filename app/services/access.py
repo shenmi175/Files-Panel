@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import sqlite3
 import shlex
 import subprocess
@@ -30,6 +31,10 @@ from app.services.common import (
 COMMAND_TIMEOUT_SECONDS = 15
 CERTBOT_TIMEOUT_SECONDS = 300
 SERVICE_RESTART_DELAY_SECONDS = 5
+PRIVILEGED_HELPER_PATH = os.getenv(
+    "PRIVILEGED_HELPER_PATH",
+    "/usr/local/libexec/file-panel/file-panel-helper.sh",
+)
 
 
 def default_config_values() -> dict[str, str]:
@@ -68,6 +73,44 @@ def run_command(command: list[str], action: str, *, timeout_seconds: int = COMMA
         raise HTTPException(status_code=500, detail=detail)
 
 
+def helper_available() -> bool:
+    helper_path = Path(PRIVILEGED_HELPER_PATH)
+    return command_available("sudo") and helper_path.is_file() and os.access(helper_path, os.X_OK)
+
+
+def run_privileged_helper(
+    args: list[str],
+    action: str,
+    *,
+    input_text: str | None = None,
+    timeout_seconds: int = COMMAND_TIMEOUT_SECONDS,
+    allowed_returncodes: set[int] | None = None,
+) -> subprocess.CompletedProcess[str]:
+    if allowed_returncodes is None:
+        allowed_returncodes = {0}
+    if not helper_available():
+        raise HTTPException(status_code=500, detail="privileged helper is not installed")
+
+    try:
+        result = subprocess.run(
+            ["sudo", "-n", PRIVILEGED_HELPER_PATH, *args],
+            input=input_text,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=timeout_seconds,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise HTTPException(status_code=504, detail=f"timed out while attempting to {action}") from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"failed to {action}: {exc}") from exc
+
+    if result.returncode not in allowed_returncodes:
+        detail = result.stderr.strip() or result.stdout.strip() or f"failed to {action}"
+        raise HTTPException(status_code=500, detail=detail)
+    return result
+
+
 def service_is_active(service_name: str | None) -> bool:
     if not service_name or not command_available("systemctl"):
         return False
@@ -92,57 +135,6 @@ def normalize_domain(raw_domain: str) -> str:
     return normalized
 
 
-def site_slug(domain: str) -> str:
-    return domain.replace(".", "-")
-
-
-def nginx_site_paths(domain: str) -> tuple[Path, Path]:
-    file_name = f"files-agent-{site_slug(domain)}.conf"
-    return (
-        SETTINGS.nginx_sites_available_dir / file_name,
-        SETTINGS.nginx_sites_enabled_dir / file_name,
-    )
-
-
-def render_nginx_site(domain: str, upstream_port: int) -> str:
-    return (
-        "server {\n"
-        "    listen 80;\n"
-        "    listen [::]:80;\n"
-        f"    server_name {domain};\n\n"
-        "    client_max_body_size 2g;\n\n"
-        "    location / {\n"
-        f"        proxy_pass http://127.0.0.1:{upstream_port};\n"
-        "        proxy_http_version 1.1;\n"
-        "        proxy_set_header Host $host;\n"
-        "        proxy_set_header X-Real-IP $remote_addr;\n"
-        "        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\n"
-        "        proxy_set_header X-Forwarded-Proto $scheme;\n"
-        "        proxy_set_header Upgrade $http_upgrade;\n"
-        '        proxy_set_header Connection "upgrade";\n'
-        "    }\n"
-        "}\n"
-    )
-
-
-def certbot_args(domain: str, email: str | None) -> list[str]:
-    command = [
-        "certbot",
-        "--nginx",
-        "-d",
-        domain,
-        "--non-interactive",
-        "--agree-tos",
-        "--redirect",
-        "--keep-until-expiring",
-    ]
-    if email:
-        command.extend(["-m", email])
-    else:
-        command.append("--register-unsafely-without-email")
-    return command
-
-
 def tls_ready_for(domain: str | None, state: dict[str, object]) -> bool:
     if not domain:
         return False
@@ -154,22 +146,53 @@ def tls_ready_for(domain: str | None, state: dict[str, object]) -> bool:
 
 
 def remove_nginx_site(domain: str) -> None:
-    site_path, enabled_path = nginx_site_paths(domain)
-    enabled_path.unlink(missing_ok=True)
-    site_path.unlink(missing_ok=True)
+    run_privileged_helper(["remove-nginx-site", domain], "remove nginx site")
+
+
+def read_nginx_site_content(domain: str) -> str | None:
+    result = run_privileged_helper(
+        ["read-nginx-site", domain],
+        "read nginx site",
+        allowed_returncodes={0, 4},
+    )
+    if result.returncode == 4:
+        return None
+    return result.stdout
+
+
+def write_nginx_site(domain: str, upstream_port: int) -> None:
+    run_privileged_helper(
+        ["write-nginx-site", domain, str(upstream_port)],
+        "write nginx site",
+    )
+
+
+def restore_nginx_site(domain: str, content: str) -> None:
+    run_privileged_helper(
+        ["replace-nginx-site-stdin", domain],
+        "restore nginx site",
+        input_text=content,
+    )
 
 
 def schedule_service_restart(service_name: str | None, *, allow_restart: bool | None = None) -> bool:
     if allow_restart is None:
         allow_restart = SETTINGS.allow_self_restart
-    if not allow_restart or not service_name or not command_available("systemctl"):
+    if (
+        not allow_restart
+        or not service_name
+        or service_name != (SETTINGS.agent_service_name or "files-agent")
+        or not helper_available()
+    ):
         return False
 
     subprocess.Popen(
         [
             "/bin/sh",
             "-c",
-            f"sleep {SERVICE_RESTART_DELAY_SECONDS} && systemctl restart {shlex.quote(service_name)} >/dev/null 2>&1",
+            "sleep "
+            f"{SERVICE_RESTART_DELAY_SECONDS} && sudo -n {shlex.quote(PRIVILEGED_HELPER_PATH)} "
+            "restart-agent >/dev/null 2>&1",
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -291,6 +314,8 @@ def update_config(request: ConfigUpdateRequest) -> ConfigUpdateResponse:
 
 def configure_domain_access(request: DomainSetupRequest) -> DomainSetupResponse:
     domain = normalize_domain(request.domain)
+    if not helper_available():
+        raise HTTPException(status_code=500, detail="privileged helper is not installed")
     if not command_available("nginx"):
         raise HTTPException(status_code=400, detail="nginx is not installed")
     if not command_available("certbot"):
@@ -301,35 +326,27 @@ def configure_domain_access(request: DomainSetupRequest) -> DomainSetupResponse:
     config_values = persisted_config_values()
     previous_state = load_access_state()
     previous_domain = previous_state.get("domain")
-    site_path, enabled_path = nginx_site_paths(domain)
-    previous_site_content = site_path.read_text(encoding="utf-8") if site_path.exists() else None
+    previous_site_content = read_nginx_site_content(domain)
 
     try:
         SETTINGS.state_dir.mkdir(parents=True, exist_ok=True)
-        SETTINGS.nginx_sites_available_dir.mkdir(parents=True, exist_ok=True)
-        SETTINGS.nginx_sites_enabled_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise HTTPException(status_code=500, detail=f"failed to prepare config paths: {exc}") from exc
 
-    try:
-        site_path.write_text(render_nginx_site(domain, SETTINGS.port), encoding="utf-8")
-        if not enabled_path.exists() and not enabled_path.is_symlink():
-            enabled_path.symlink_to(site_path)
-    except OSError as exc:
-        raise HTTPException(status_code=500, detail=f"failed to write nginx config: {exc}") from exc
+    write_nginx_site(domain, SETTINGS.port)
 
     try:
-        run_command(["nginx", "-t"], "validate nginx config")
-        run_command(
-            ["systemctl", "enable", "--now", SETTINGS.nginx_service_name or "nginx"],
+        run_privileged_helper(["validate-nginx"], "validate nginx config")
+        run_privileged_helper(
+            ["enable-nginx"],
             "enable nginx",
         )
-        run_command(
-            ["systemctl", "reload", SETTINGS.nginx_service_name or "nginx"],
+        run_privileged_helper(
+            ["reload-nginx"],
             "reload nginx",
         )
-        run_command(
-            certbot_args(domain, config_values.get("CERTBOT_EMAIL") or SETTINGS.certbot_email),
+        run_privileged_helper(
+            ["issue-cert", domain, config_values.get("CERTBOT_EMAIL") or SETTINGS.certbot_email or ""],
             "issue tls certificate",
             timeout_seconds=CERTBOT_TIMEOUT_SECONDS,
         )
@@ -337,13 +354,11 @@ def configure_domain_access(request: DomainSetupRequest) -> DomainSetupResponse:
         if previous_site_content is None:
             remove_nginx_site(domain)
         else:
-            site_path.write_text(previous_site_content, encoding="utf-8")
-            if not enabled_path.exists() and not enabled_path.is_symlink():
-                enabled_path.symlink_to(site_path)
+            restore_nginx_site(domain, previous_site_content)
         try:
-            run_command(["nginx", "-t"], "validate nginx rollback")
-            run_command(
-                ["systemctl", "reload", SETTINGS.nginx_service_name or "nginx"],
+            run_privileged_helper(["validate-nginx"], "validate nginx rollback")
+            run_privileged_helper(
+                ["reload-nginx"],
                 "reload nginx rollback",
             )
         except HTTPException:
@@ -353,9 +368,9 @@ def configure_domain_access(request: DomainSetupRequest) -> DomainSetupResponse:
     if previous_domain and previous_domain != domain:
         remove_nginx_site(str(previous_domain))
         try:
-            run_command(["nginx", "-t"], "validate nginx cleanup")
-            run_command(
-                ["systemctl", "reload", SETTINGS.nginx_service_name or "nginx"],
+            run_privileged_helper(["validate-nginx"], "validate nginx cleanup")
+            run_privileged_helper(
+                ["reload-nginx"],
                 "reload nginx cleanup",
             )
         except HTTPException:

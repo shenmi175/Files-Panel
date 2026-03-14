@@ -5,16 +5,15 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=root
-Group=root
+User=filepanel
+Group=filepanel
 WorkingDirectory=/opt/files-agent
 EnvironmentFile=/etc/files-agent/files-agent.env
 ExecStart=/opt/files-agent/.venv/bin/python -m app
 Restart=on-failure
 RestartSec=3
-NoNewPrivileges=true
 PrivateTmp=true
-UMask=0077
+UMask=0027
 
 [Install]
 WantedBy=multi-user.target

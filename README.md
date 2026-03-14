@@ -1,34 +1,42 @@
 # File Panel
 
-一个面向 Ubuntu/Linux 节点的 Python/FastAPI 控制面板，用于查看当前节点资源、浏览文件、读取运行日志，并维护后续多服务器集中管理所需的节点目录配置。
+一个部署在 Ubuntu/Linux 节点上的 Python/FastAPI 控制面板，用于查看当前节点资源、浏览文件、读取运行日志，并为后续 2-10 台节点的 WireGuard 管理网络预留配置。
 
 ## 当前能力
 
-- 查看当前节点资源概览
-  - uptime
-  - load average
-  - CPU、内存、磁盘、网络、进程
+- 查看当前节点资源
+  - CPU、内存、磁盘、网络、进程、趋势图
   - Docker 运行状态
-- 浏览文件目录
-- 上传、下载、删除、重命名文件
-- 新建目录
+- 浏览和管理文件
+  - 浏览目录
+  - 上传、下载、删除、重命名文件
+  - 新建目录
 - 查看当前访问状态
   - 当前监听地址
   - 域名接入状态
   - nginx / certbot 状态
-- 在面板内接入域名
-  - 输入域名
-  - 自动写入 nginx 配置
-  - 自动 reload nginx
-  - 自动通过 certbot 申请 HTTPS 证书
-  - 接入完成后把服务切回 `127.0.0.1`
+- 接入域名并自动申请 HTTPS
 - Bearer Token 鉴权
-  - Token 通过 SQLite 和环境变量初始化
-  - 前端只保存到当前浏览器会话
-- 节点目录管理
-  - 自动维护本机节点记录
-  - 支持录入远程节点 URL
-  - 支持预留 WireGuard 管理地址
+- 维护节点目录
+  - 自动记录本机节点
+  - 预留远程节点 URL
+  - 预留 WireGuard 地址
+
+## 安全基线
+
+- `files-agent` 服务默认以专用系统用户 `filepanel` 运行，不再使用 `root`
+- 默认 `AGENT_ROOT` 收缩到 `/srv/file-panel/data`
+- 只有少量必须的高权限操作通过 root helper 执行
+  - nginx 配置写入
+  - nginx 校验 / reload
+  - certbot 申请证书
+  - agent 自重启
+- SQLite 状态目录默认位于 `/var/lib/files-agent`
+
+注意：
+
+- 如果你把 `AGENT_ROOT` 改成其他目录，该目录必须对 `filepanel` 用户可读写执行
+- Docker 状态读取在某些系统上可能因为 Docker socket 权限而显示不可用，这是非 root 运行的预期安全取舍
 
 ## 技术栈
 
@@ -37,15 +45,16 @@
 - 配置持久化：`sqlite3`
 - 前端：静态 HTML/CSS/JS
 - 反代与证书：`nginx + certbot`
+- 节点互联准备：`wireguard-tools`
 - 部署：`systemd`
 
 ## 快速安装
 
 前提：
 
-- Python 3.12+
 - Ubuntu/Linux
-- 如果需要域名接入，目标域名的 `A/AAAA` 记录需要指向当前服务器
+- Python 3.12+
+- 如果需要接入域名，域名 `A/AAAA` 记录应指向当前服务器
 - 80/443 端口可对外开放，供 nginx 和 certbot 使用
 
 安装：
@@ -54,19 +63,21 @@
 sudo bash scripts/install_agent.sh
 ```
 
-安装完成后会自动：
+安装脚本会自动：
 
-- 安装 Python 运行环境、`nginx`、`certbot`、`sqlite3`
-- 创建 `/opt/files-agent`
+- 安装 `sudo`、Python 运行环境、`nginx`、`certbot`、`sqlite3`、`wireguard-tools`
+- 创建专用系统用户 `filepanel`
+- 创建应用目录 `/opt/files-agent`
+- 创建状态目录 `/var/lib/files-agent`
+- 创建默认文件根目录 `/srv/file-panel/data`
 - 创建 Python 虚拟环境并安装依赖
-- 安装 `systemd` 服务
+- 安装 systemd 服务
 - 安装全局命令 `/usr/local/bin/file-panel`
-- 初始化 SQLite 存储目录 `/var/lib/files-agent/file-panel.db`
+- 安装 root helper `/usr/local/libexec/file-panel/file-panel-helper.sh`
+- 写入 sudoers 规则，仅允许 `filepanel` 调用该 helper
 - 首次自动生成 `AGENT_TOKEN`
 
 ## 全局命令
-
-安装完成后可直接使用：
 
 ```bash
 file-panel start
@@ -78,42 +89,30 @@ file-panel info
 file-panel uninstall
 ```
 
-说明：
-
-- `file-panel start`：启动服务
-- `file-panel restart`：重启服务
-- `file-panel uninstall`：一键卸载应用目录、环境文件、SQLite 数据和全局命令
-- `file-panel logs 120`：查看最近 120 行日志
-
-频繁迭代代码时，也可以继续使用：
-
-```bash
-bash scripts/agentctl.sh quick
-bash scripts/agentctl.sh redeploy
-bash scripts/agentctl.sh full-install
-```
-
-## 首次访问流程
+## 首次访问
 
 ```text
 1. 打开 http://服务器IP:3000
 2. 输入安装脚本打印出的 AGENT_TOKEN
-3. 在面板中查看当前节点资源或修改运行配置
+3. 查看资源或调整运行配置
 4. 如果需要公网入口，在配置页接入域名
 5. 域名接入完成后，改用 https://你的域名 访问
 ```
 
+接入域名成功后，agent 会切回 `127.0.0.1:3000`，公网访问走 nginx 反代。
+
 ## 手动开发启动
 
-如果只是本地开发测试，也可以手动启动：
+本地开发时建议显式指定 `AGENT_ROOT`，不要依赖默认值：
 
 ```bash
+mkdir -p /srv/file-panel/data
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 AGENT_TOKEN="$(.venv/bin/python scripts/generate_token.py)" \
 HOST=0.0.0.0 \
 PORT=3000 \
-AGENT_ROOT=/ \
+AGENT_ROOT=/srv/file-panel/data \
 STATE_DIR=/var/lib/files-agent \
 DATABASE_PATH=/var/lib/files-agent/file-panel.db \
 ALLOW_SELF_RESTART=0 \
@@ -122,21 +121,22 @@ ALLOW_SELF_RESTART=0 \
 
 ## 配置来源
 
-当前版本使用 SQLite 持久化保存运行配置，默认数据库路径：
+SQLite 默认数据库路径：
 
 ```text
 /var/lib/files-agent/file-panel.db
 ```
 
-环境文件 `/etc/files-agent/files-agent.env` 主要用于提供启动期基础路径：
+环境文件 `/etc/files-agent/files-agent.env` 主要提供启动期路径和服务名：
 
 - `ENV_FILE_PATH`
 - `STATE_DIR`
 - `DATABASE_PATH`
 - `AGENT_SERVICE_NAME`
 - `NGINX_SERVICE_NAME`
+- `PRIVILEGED_HELPER_PATH`
 
-SQLite 中持久化保存的核心运行配置包括：
+SQLite 中持久化保存的主要运行配置包括：
 
 - `HOST`
 - `PORT`
@@ -147,16 +147,37 @@ SQLite 中持久化保存的核心运行配置包括：
 - `CERTBOT_EMAIL`
 - `ALLOW_SELF_RESTART`
 
+## WireGuard
+
+当前版本会安装 `wireguard-tools`，但不会自动创建 peer、密钥和隧道。
+
+也就是说，目前项目对 WireGuard 的实际支持是：
+
+- 安装好 `wg` / `wg-quick` 命令
+- 在节点目录中记录 `wireguard_ip`
+- 为后续多节点接入留出地址字段
+
+当前项目还没有实现：
+
+- 自动生成 WireGuard 配置
+- 自动交换公私钥
+- 自动创建 peer
+- 自动检测隧道健康
+- 通过 WireGuard 代理远程节点 API
+
+如果后续要管理 2-10 台机器，推荐做法是：
+
+1. 先用 WireGuard 把这些机器连成管理网络
+2. 每台机器单独部署一个 File Panel agent
+3. 后续再增加一个 manager 层，统一代理这些 agent
+
 ## 多服务器预留
 
-当前运行时仍以“当前节点”操作为主，但已经预留了多服务器所需的基础配置空间：
+当前运行时仍以“当前节点”操作为主，多服务器只是预留了节点目录和元数据：
 
-- `servers` 表用于保存节点目录
-- 支持记录远程节点 URL
-- 支持记录 WireGuard 管理地址
-- 前端设置页可维护节点目录
-
-后续如果扩展集中管理，建议在当前项目外再增加一个 manager 层，统一代理多个 agent，而不是把本项目改成 SSH 面板。
+- `servers` 表保存节点名称、URL、令牌、WireGuard 地址
+- 前端可以维护节点目录
+- 当前资源 / 文件 / 日志 / 域名接入仍然只作用于本机
 
 ## API
 
@@ -183,8 +204,6 @@ SQLite 中持久化保存的核心运行配置包括：
 
 ## 卸载
 
-一键卸载：
-
 ```bash
 sudo file-panel uninstall
 ```
@@ -194,8 +213,11 @@ sudo file-panel uninstall
 - `/opt/files-agent`
 - `/etc/files-agent`
 - `/var/lib/files-agent`
+- `/srv/file-panel`
 - `/usr/local/bin/file-panel`
-- `files-agent` 对应的 `systemd` unit
+- `/usr/local/libexec/file-panel`
+- `/etc/sudoers.d/file-panel`
+- `filepanel` 系统用户和组
 - 项目生成的 `files-agent-*.conf` nginx 站点配置
 
 不会自动卸载：
@@ -203,6 +225,7 @@ sudo file-panel uninstall
 - `nginx`
 - `certbot`
 - `sqlite3`
+- `wireguard-tools`
 
 ## 目录结构
 

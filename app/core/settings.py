@@ -11,6 +11,7 @@ from app.core.storage import bootstrap_paths, initialize_storage, load_config_va
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 STATIC_DIR = BASE_DIR / "static"
+DEFAULT_AGENT_ROOT = Path("/srv/file-panel/data")
 RESOURCE_HISTORY_MAX_POINTS = 96
 DEFAULT_RESOURCE_SAMPLE_INTERVAL = 15
 RESOURCE_SAMPLE_INTERVAL_CHOICES = (2, 5, 10, 15)
@@ -62,7 +63,7 @@ def load_settings() -> Settings:
             "HOST": os.getenv("HOST", "127.0.0.1").strip() or "127.0.0.1",
             "PORT": os.getenv("PORT", "3000").strip() or "3000",
             "AGENT_NAME": os.getenv("AGENT_NAME", socket.gethostname()).strip() or socket.gethostname(),
-            "AGENT_ROOT": os.getenv("AGENT_ROOT", "/").strip() or "/",
+            "AGENT_ROOT": os.getenv("AGENT_ROOT", str(DEFAULT_AGENT_ROOT)).strip() or str(DEFAULT_AGENT_ROOT),
             "AGENT_TOKEN": os.getenv("AGENT_TOKEN", "").strip(),
             "RESOURCE_SAMPLE_INTERVAL": os.getenv("RESOURCE_SAMPLE_INTERVAL", str(DEFAULT_RESOURCE_SAMPLE_INTERVAL)).strip()
             or str(DEFAULT_RESOURCE_SAMPLE_INTERVAL),
@@ -74,7 +75,9 @@ def load_settings() -> Settings:
 
     host = persisted.get("HOST", os.getenv("HOST", "127.0.0.1")).strip() or "127.0.0.1"
     port = int(persisted.get("PORT", os.getenv("PORT", "3000")))
-    root_path = Path(persisted.get("AGENT_ROOT", os.getenv("AGENT_ROOT", "/"))).expanduser().resolve(
+    root_path = Path(
+        persisted.get("AGENT_ROOT", os.getenv("AGENT_ROOT", str(DEFAULT_AGENT_ROOT)))
+    ).expanduser().resolve(
         strict=False
     )
     if not root_path.exists() or not root_path.is_dir():

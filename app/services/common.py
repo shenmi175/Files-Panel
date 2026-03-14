@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
@@ -58,6 +59,11 @@ def normalize_existing_directory(raw_path: str) -> Path:
     target = Path(raw_path).expanduser().resolve(strict=False)
     if not target.exists() or not target.is_dir():
         raise HTTPException(status_code=400, detail="agent root must be an existing directory")
+    if not os.access(target, os.R_OK | os.W_OK | os.X_OK):
+        raise HTTPException(
+            status_code=400,
+            detail="agent root must be readable and writable by the service user",
+        )
     return target
 
 
