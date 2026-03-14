@@ -176,9 +176,10 @@ h3 {
 }
 
 .view-switch {
-  display: inline-flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(72px, 1fr));
   gap: 8px;
+  width: min(500px, 100%);
   padding: 8px;
   background: rgba(33, 47, 40, 0.08);
   border-radius: 18px;
@@ -186,7 +187,7 @@ h3 {
 }
 
 .view-tab {
-  min-width: 92px;
+  min-width: 0;
   padding-inline: 18px;
   background: transparent;
   color: var(--muted);
@@ -1048,7 +1049,6 @@ h3 {
 
   .view-tab,
   .log-level-tab {
-    flex: 1 1 0;
     min-width: 0;
   }
 }

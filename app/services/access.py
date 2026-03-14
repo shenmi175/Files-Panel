@@ -146,8 +146,13 @@ def tls_ready_for(domain: str | None, state: dict[str, object]) -> bool:
         return False
 
     letsencrypt_cert = Path("/etc/letsencrypt/live") / domain / "fullchain.pem"
-    if letsencrypt_cert.exists():
-        return True
+    try:
+        if letsencrypt_cert.exists():
+            return True
+    except PermissionError:
+        # The agent may run as an unprivileged service user without access to
+        # certbot-managed directories; fall back to persisted access state.
+        return bool(state.get("https_enabled"))
     return bool(state.get("https_enabled"))
 
 

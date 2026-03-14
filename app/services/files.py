@@ -48,6 +48,16 @@ def ensure_not_root(target: Path) -> None:
         raise HTTPException(status_code=400, detail="operation is not allowed on agent root")
 
 
+def permission_denied_error(target: Path) -> HTTPException:
+    return HTTPException(
+        status_code=403,
+        detail=(
+            f"service user cannot access {target}; "
+            "adjust AGENT_ROOT or directory ownership for the filepanel user"
+        ),
+    )
+
+
 def file_type_for(path: Path) -> str:
     if path.is_symlink():
         return "symlink"
@@ -84,15 +94,18 @@ def list_directory_entries(target: Path, *, show_hidden: bool) -> list[FileEntry
     except NotADirectoryError as exc:
         raise HTTPException(status_code=400, detail="path is not a directory") from exc
     except PermissionError as exc:
-        raise HTTPException(status_code=403, detail="permission denied") from exc
+        raise permission_denied_error(target) from exc
 
 
 def build_file_list(path: str | None, show_hidden: bool) -> FileListResponse:
     current_path = resolve_path(path)
-    if not current_path.exists():
-        raise HTTPException(status_code=404, detail="path not found")
-    if not current_path.is_dir():
-        raise HTTPException(status_code=400, detail="path is not a directory")
+    try:
+        if not current_path.exists():
+            raise HTTPException(status_code=404, detail="path not found")
+        if not current_path.is_dir():
+            raise HTTPException(status_code=400, detail="path is not a directory")
+    except PermissionError as exc:
+        raise permission_denied_error(current_path) from exc
 
     cache_key = (str(current_path), show_hidden)
     cached = _directory_cache.get(cache_key)
@@ -127,7 +140,7 @@ def create_directory(request: CreateDirectoryRequest) -> MessageResponse:
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="parent directory not found") from exc
     except PermissionError as exc:
-        raise HTTPException(status_code=403, detail="permission denied") from exc
+        raise permission_denied_error(target.parent) from exc
     invalidate_file_cache()
     return MessageResponse(message="directory created")
 
@@ -146,7 +159,7 @@ def delete_path(path: str) -> MessageResponse:
         else:
             target.unlink(missing_ok=False)
     except PermissionError as exc:
-        raise HTTPException(status_code=403, detail="permission denied") from exc
+        raise permission_denied_error(target) from exc
 
     invalidate_file_cache()
     return MessageResponse(message="deleted")
@@ -167,7 +180,7 @@ def rename_path(request: RenameFileRequest) -> MessageResponse:
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail="target parent directory not found") from exc
     except PermissionError as exc:
-        raise HTTPException(status_code=403, detail="permission denied") from exc
+        raise permission_denied_error(old_path.parent) from exc
 
     invalidate_file_cache()
     return MessageResponse(message="renamed")
@@ -193,7 +206,7 @@ def upload_file(file: UploadFile, path: str | None) -> MessageResponse:
             file.file.seek(0)
             shutil.copyfileobj(file.file, handle)
     except PermissionError as exc:
-        raise HTTPException(status_code=403, detail="permission denied") from exc
+        raise permission_denied_error(destination_dir) from exc
     finally:
         file.file.close()
 
@@ -203,8 +216,11 @@ def upload_file(file: UploadFile, path: str | None) -> MessageResponse:
 
 def download_file(path: str) -> FileResponse:
     target = resolve_path(path)
-    if not target.exists() or not target.is_file():
-        raise HTTPException(status_code=404, detail="file not found")
+    try:
+        if not target.exists() or not target.is_file():
+            raise HTTPException(status_code=404, detail="file not found")
+    except PermissionError as exc:
+        raise permission_denied_error(target.parent) from exc
 
     media_type, _ = mimetypes.guess_type(target.name)
     return FileResponse(
