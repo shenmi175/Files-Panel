@@ -209,6 +209,26 @@ quick_reload() {
   show_access_info
 }
 
+grant_access() {
+  local target="${1:-}"
+  if [[ -z "$target" ]]; then
+    target="$(read_config_value AGENT_ROOT)"
+  fi
+  if [[ -z "$target" ]]; then
+    echo "请提供要授权的路径" >&2
+    exit 1
+  fi
+
+  log "授权目录给 filepanel"
+  echo "目标目录: ${target}"
+  if [[ ! -x /usr/local/libexec/file-panel/file-panel-helper.sh ]]; then
+    echo "privileged helper is not installed" >&2
+    exit 1
+  fi
+  /usr/local/libexec/file-panel/file-panel-helper.sh grant-path-access "$target"
+  echo "已授予 filepanel 访问权限"
+}
+
 uninstall_panel() {
   log "卸载 File Panel"
   bash "$UNINSTALL_SCRIPT"
@@ -226,6 +246,7 @@ show_help() {
   status        查看服务状态
   logs [n]      查看最近 n 行日志，默认 80 行
   info          输出当前入口、访问令牌和 SQLite 路径
+  grant-access  为指定目录授予 filepanel 访问权限；默认使用当前 AGENT_ROOT
   uninstall     一键卸载 File Panel 及 SQLite 数据
   full-install  首次安装或补系统依赖，然后重启服务
   redeploy      跳过 apt，只同步代码和 Python 依赖，然后重启服务
@@ -235,6 +256,7 @@ show_help() {
 常用:
   file-panel start
   file-panel restart
+  file-panel grant-access /srv/data
   file-panel uninstall
 EOF
 }
@@ -286,6 +308,10 @@ case "$command" in
   info)
     ensure_root "$command" "$@"
     show_access_info
+    ;;
+  grant-access)
+    ensure_root "$command" "$@"
+    grant_access "${1:-}"
     ;;
   uninstall)
     ensure_root "$command" "$@"

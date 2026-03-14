@@ -279,15 +279,10 @@ h3 {
   gap: 20px;
 }
 
-.overview-grid,
 .access-grid,
 .nodes-grid {
   display: grid;
   gap: 20px;
-}
-
-.overview-grid {
-  grid-template-columns: minmax(300px, 0.72fr) minmax(0, 1.28fr);
 }
 
 .access-grid {
@@ -308,35 +303,6 @@ h3 {
   justify-content: space-between;
   gap: 18px;
   align-items: flex-start;
-}
-
-.section-brief {
-  align-content: start;
-}
-
-.brief-list {
-  margin-top: 20px;
-  display: grid;
-  gap: 14px;
-}
-
-.brief-item {
-  padding: 18px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--line);
-  background: rgba(255, 255, 255, 0.72);
-  display: grid;
-  gap: 8px;
-}
-
-.brief-item strong {
-  font-size: 18px;
-  line-height: 1.15;
-}
-
-.brief-item p {
-  line-height: 1.65;
-  color: var(--muted);
 }
 
 .ghost-chip {
@@ -971,7 +937,6 @@ h3 {
 }
 
 @media (max-width: 1160px) {
-  .overview-grid,
   .access-grid,
   .nodes-grid {
     grid-template-columns: 1fr;

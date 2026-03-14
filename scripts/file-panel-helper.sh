@@ -3,6 +3,7 @@
 set -euo pipefail
 
 ENV_FILE="${ENV_FILE:-/etc/files-agent/files-agent.env}"
+SERVICE_USER="${SERVICE_USER:-filepanel}"
 
 read_env_value() {
   local key="$1"
@@ -63,6 +64,62 @@ EOF
 
 ensure_dir() {
   install -d -m 755 "$1"
+}
+
+require_existing_path() {
+  local target="$1"
+  if [[ -z "$target" ]]; then
+    echo "path is required" >&2
+    exit 2
+  fi
+  if [[ ! -e "$target" ]]; then
+    echo "path not found: $target" >&2
+    exit 2
+  fi
+}
+
+validate_grant_target() {
+  local target="$1"
+  case "$target" in
+    /|/proc|/sys|/dev)
+      echo "refusing to grant access to protected path: $target" >&2
+      exit 2
+      ;;
+  esac
+}
+
+grant_parent_traverse() {
+  local target="$1"
+  local current
+  current="$(dirname "$target")"
+  while [[ -n "$current" && "$current" != "/" && "$current" != "." ]]; do
+    setfacl -m "u:${SERVICE_USER}:x" "$current"
+    current="$(dirname "$current")"
+  done
+}
+
+grant_path_access() {
+  local target_raw="$1"
+  local target
+  require_existing_path "$target_raw"
+  if ! command -v setfacl >/dev/null 2>&1; then
+    echo "setfacl is not installed; install acl first" >&2
+    exit 2
+  fi
+
+  target="$(realpath "$target_raw")"
+  validate_grant_target "$target"
+  grant_parent_traverse "$target"
+
+  if [[ -d "$target" ]]; then
+    setfacl -R -m "u:${SERVICE_USER}:rwx" "$target"
+    find "$target" -type d -exec setfacl -m "d:u:${SERVICE_USER}:rwx" "{}" +
+    setfacl -m "u:${SERVICE_USER}:rwx" "$target"
+    setfacl -m "d:u:${SERVICE_USER}:rwx" "$target"
+    return
+  fi
+
+  setfacl -m "u:${SERVICE_USER}:rw" "$target"
 }
 
 write_nginx_site() {
@@ -204,6 +261,9 @@ case "$command" in
     ;;
   issue-cert)
     issue_cert "${1:-}" "${2:-}"
+    ;;
+  grant-path-access)
+    grant_path_access "${1:-}"
     ;;
   *)
     echo "unknown helper command: ${command}" >&2

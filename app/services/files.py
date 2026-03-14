@@ -53,7 +53,8 @@ def permission_denied_error(target: Path) -> HTTPException:
         status_code=403,
         detail=(
             f"service user cannot access {target}; "
-            "adjust AGENT_ROOT or directory ownership for the filepanel user"
+            "adjust AGENT_ROOT, or run 'sudo file-panel grant-access <path>' "
+            "to grant the filepanel user access to that directory"
         ),
     )
 

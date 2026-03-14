@@ -46,7 +46,7 @@ append_group_if_exists() {
 
 if [[ "$INSTALL_SYSTEM_PACKAGES" == "1" ]]; then
   apt-get update
-  apt-get install -y sudo python3 python3-venv python3-pip nginx certbot python3-certbot-nginx sqlite3 wireguard-tools
+  apt-get install -y sudo python3 python3-venv python3-pip nginx certbot python3-certbot-nginx sqlite3 wireguard-tools acl
 fi
 
 if ! getent group "$SERVICE_GROUP" >/dev/null 2>&1; then
