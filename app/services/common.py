@@ -55,10 +55,15 @@ def is_public_bind(host: str) -> bool:
     return host not in {"127.0.0.1", "::1", "localhost"}
 
 
-def normalize_existing_directory(raw_path: str) -> Path:
+def normalize_directory_path(raw_path: str) -> Path:
     target = Path(raw_path).expanduser().resolve(strict=False)
     if not target.exists() or not target.is_dir():
         raise HTTPException(status_code=400, detail="agent root must be an existing directory")
+    return target
+
+
+def normalize_existing_directory(raw_path: str) -> Path:
+    target = normalize_directory_path(raw_path)
     if not os.access(target, os.R_OK | os.W_OK | os.X_OK):
         raise HTTPException(
             status_code=400,

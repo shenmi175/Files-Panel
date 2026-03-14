@@ -24,6 +24,7 @@ from app.services.common import (
     command_available,
     env_flag,
     is_public_bind,
+    normalize_directory_path,
     normalize_existing_directory,
     runtime_restart_needed,
     utc_now,
@@ -212,6 +213,28 @@ def schedule_service_restart(service_name: str | None, *, allow_restart: bool | 
     return True
 
 
+def ensure_agent_root_access(agent_root: Path) -> None:
+    if os.access(agent_root, os.R_OK | os.W_OK | os.X_OK):
+        return
+    if not helper_available():
+        raise HTTPException(
+            status_code=400,
+            detail="agent root is not accessible by the service user and privileged helper is unavailable",
+        )
+
+    run_privileged_helper(
+        ["grant-path-access", str(agent_root)],
+        "grant service access to agent root",
+        timeout_seconds=120,
+    )
+
+    if not os.access(agent_root, os.R_OK | os.W_OK | os.X_OK):
+        raise HTTPException(
+            status_code=500,
+            detail="agent root access could not be granted to the service user",
+        )
+
+
 def build_access_status() -> AccessStatus:
     config_values = persisted_config_values()
     state = load_access_state()
@@ -281,7 +304,9 @@ def update_config(request: ConfigUpdateRequest) -> ConfigUpdateResponse:
     if not agent_name:
         raise HTTPException(status_code=400, detail="agent name is required")
 
-    agent_root = normalize_existing_directory(request.agent_root)
+    agent_root = normalize_directory_path(request.agent_root)
+    ensure_agent_root_access(agent_root)
+    agent_root = normalize_existing_directory(str(agent_root))
     certbot_email = (request.certbot_email or "").strip()
     allow_public_ip = bool(request.allow_public_ip)
     allow_self_restart = bool(request.allow_self_restart)

@@ -65,6 +65,7 @@ fi
 
 append_group_if_exists "$SERVICE_USER" "systemd-journal"
 append_group_if_exists "$SERVICE_USER" "adm"
+append_group_if_exists "$SERVICE_USER" "docker"
 
 install -d -m 755 "$APP_DIR"
 install -d -m 750 -o root -g "$SERVICE_GROUP" "$ENV_DIR"
@@ -110,28 +111,60 @@ read_env_value() {
   grep -E "^${key}=" "$ENV_FILE" | tail -n 1 | cut -d "=" -f 2- || true
 }
 
-TOKEN="$(read_env_value AGENT_TOKEN)"
+read_db_config_value() {
+  local key="$1"
+  if [[ ! -f "$DATABASE_PATH" ]]; then
+    return 0
+  fi
+  sqlite3 -batch -noheader "$DATABASE_PATH" \
+    "SELECT value FROM config WHERE key='${key}' LIMIT 1;" 2>/dev/null || true
+}
+
+read_access_value() {
+  local key="$1"
+  if [[ ! -f "$DATABASE_PATH" ]]; then
+    return 0
+  fi
+  sqlite3 -batch -noheader "$DATABASE_PATH" \
+    "SELECT ${key} FROM access_state WHERE singleton_id=1 LIMIT 1;" 2>/dev/null || true
+}
+
+read_config_value() {
+  local key="$1"
+  local from_db
+  from_db="$(read_db_config_value "$key")"
+  if [[ -n "$from_db" ]]; then
+    printf '%s\n' "$from_db"
+    return
+  fi
+  read_env_value "$key"
+}
+
+TOKEN="$(read_config_value AGENT_TOKEN)"
 if [[ -z "$TOKEN" ]]; then
   TOKEN="$("$APP_DIR/.venv/bin/python" "$APP_DIR/scripts/generate_token.py")"
 fi
 
-AGENT_NAME_VALUE="$(read_env_value AGENT_NAME)"
+AGENT_NAME_VALUE="$(read_config_value AGENT_NAME)"
 if [[ -z "$AGENT_NAME_VALUE" ]]; then
   AGENT_NAME_VALUE="$(hostname)"
 fi
 
-ROOT_VALUE="$(read_env_value AGENT_ROOT)"
+ROOT_VALUE="$(read_config_value AGENT_ROOT)"
 if [[ -z "$ROOT_VALUE" ]]; then
   ROOT_VALUE="$DEFAULT_AGENT_ROOT"
 fi
 
-SAMPLE_INTERVAL_VALUE="$(read_env_value RESOURCE_SAMPLE_INTERVAL)"
+SAMPLE_INTERVAL_VALUE="$(read_config_value RESOURCE_SAMPLE_INTERVAL)"
 if [[ -z "$SAMPLE_INTERVAL_VALUE" ]]; then
   SAMPLE_INTERVAL_VALUE="15"
 fi
 
-PUBLIC_DOMAIN_VALUE="$(read_env_value PUBLIC_DOMAIN)"
-CERTBOT_EMAIL_VALUE="$(read_env_value CERTBOT_EMAIL)"
+PUBLIC_DOMAIN_VALUE="$(read_access_value domain)"
+if [[ -z "$PUBLIC_DOMAIN_VALUE" ]]; then
+  PUBLIC_DOMAIN_VALUE="$(read_env_value PUBLIC_DOMAIN)"
+fi
+CERTBOT_EMAIL_VALUE="$(read_config_value CERTBOT_EMAIL)"
 HOST_VALUE="0.0.0.0"
 if [[ -n "$PUBLIC_DOMAIN_VALUE" ]]; then
   HOST_VALUE="127.0.0.1"
@@ -142,6 +175,10 @@ if [[ "$ROOT_VALUE" == "$DEFAULT_AGENT_ROOT" ]]; then
 elif [[ "$ROOT_VALUE" == "$AGENT_ROOT_BASE" || "$ROOT_VALUE" == "$AGENT_ROOT_BASE/"* ]]; then
   install -d -m 750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$ROOT_VALUE"
   chown -R "$SERVICE_USER":"$SERVICE_GROUP" "$AGENT_ROOT_BASE"
+fi
+
+if [[ -d "$ROOT_VALUE" ]]; then
+  "$HELPER_INSTALL_PATH" grant-path-access "$ROOT_VALUE"
 fi
 
 cat >"$ENV_FILE" <<EOF
