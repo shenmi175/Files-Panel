@@ -18,20 +18,20 @@ router = APIRouter(prefix="/api", tags=["access"], dependencies=[Depends(require
 
 
 @router.get("/access", response_model=AccessStatus)
-async def get_access_status() -> AccessStatus:
+def get_access_status() -> AccessStatus:
     return access_service.build_access_status()
 
 
 @router.get("/config", response_model=ConfigResponse)
-async def get_config() -> ConfigResponse:
+def get_config() -> ConfigResponse:
     return access_service.build_config_response()
 
 
 @router.post("/config", response_model=ConfigUpdateResponse)
-async def update_config(request: ConfigUpdateRequest) -> ConfigUpdateResponse:
+def update_config(request: ConfigUpdateRequest) -> ConfigUpdateResponse:
     return access_service.update_config(request)
 
 
 @router.post("/access/domain", response_model=DomainSetupResponse)
-async def configure_domain_access(request: DomainSetupRequest) -> DomainSetupResponse:
+def configure_domain_access(request: DomainSetupRequest) -> DomainSetupResponse:
     return access_service.configure_domain_access(request)

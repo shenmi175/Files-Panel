@@ -219,6 +219,7 @@ class ConfigResponse(BaseModel):
     desired_bind_host: str
     desired_bind_port: int
     restart_pending: bool
+    database_path: str
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -249,6 +250,35 @@ class CreateDirectoryRequest(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class ServerRecord(BaseModel):
+    id: int
+    name: str
+    base_url: str | None
+    wireguard_ip: str | None
+    enabled: bool
+    is_local: bool
+    last_seen_at: str | None = None
+    created_at: str
+    updated_at: str
+
+
+class ServerListResponse(BaseModel):
+    items: list[ServerRecord]
+
+
+class ServerUpsertRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    base_url: str | None = Field(default=None, max_length=512)
+    auth_token: str | None = Field(default=None, max_length=512)
+    wireguard_ip: str | None = Field(default=None, max_length=120)
+    enabled: bool = True
+
+
+class ServerMutationResponse(BaseModel):
+    message: str
+    server: ServerRecord
 
 
 @dataclass

@@ -4,10 +4,13 @@ set -euo pipefail
 
 SERVICE_NAME="${SERVICE_NAME:-files-agent}"
 ENV_FILE="${ENV_FILE:-/etc/files-agent/files-agent.env}"
+STATE_DIR="${STATE_DIR:-/var/lib/files-agent}"
+DB_PATH="${DB_PATH:-}"
 DEFAULT_LOG_LINES="${DEFAULT_LOG_LINES:-80}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALL_SCRIPT="$SCRIPT_DIR/install_agent.sh"
+UNINSTALL_SCRIPT="$SCRIPT_DIR/uninstall_agent.sh"
 
 read_env_value() {
   local key="$1"
@@ -17,13 +20,55 @@ read_env_value() {
   grep -E "^${key}=" "$ENV_FILE" | tail -n 1 | cut -d "=" -f 2- || true
 }
 
+database_path() {
+  if [[ -n "$DB_PATH" ]]; then
+    printf '%s\n' "$DB_PATH"
+    return
+  fi
+
+  local from_env
+  from_env="$(read_env_value DATABASE_PATH)"
+  if [[ -n "$from_env" ]]; then
+    printf '%s\n' "$from_env"
+    return
+  fi
+
+  printf '%s\n' "${STATE_DIR}/file-panel.db"
+}
+
+db_query() {
+  local sql="$1"
+  local path
+  path="$(database_path)"
+  if [[ ! -f "$path" ]]; then
+    return 0
+  fi
+  sqlite3 -batch -noheader "$path" "$sql" 2>/dev/null || true
+}
+
+read_config_value() {
+  local key="$1"
+  local value
+  value="$(db_query "SELECT value FROM config WHERE key='${key}' LIMIT 1;")"
+  if [[ -n "$value" ]]; then
+    printf '%s\n' "$value"
+    return
+  fi
+  read_env_value "$key"
+}
+
+read_access_value() {
+  local key="$1"
+  db_query "SELECT ${key} FROM access_state WHERE singleton_id=1 LIMIT 1;"
+}
+
 server_ip() {
   hostname -I | awk '{print $1}'
 }
 
 bind_host() {
   local host
-  host="$(read_env_value HOST)"
+  host="$(read_config_value HOST)"
   if [[ -z "$host" ]]; then
     host="127.0.0.1"
   fi
@@ -32,7 +77,7 @@ bind_host() {
 
 bind_port() {
   local port
-  port="$(read_env_value PORT)"
+  port="$(read_config_value PORT)"
   if [[ -z "$port" ]]; then
     port="3000"
   fi
@@ -51,12 +96,13 @@ ensure_root() {
 }
 
 show_access_info() {
-  local host port domain token ip
+  local host port domain token ip db
   host="$(bind_host)"
   port="$(bind_port)"
-  domain="$(read_env_value PUBLIC_DOMAIN)"
-  token="$(read_env_value AGENT_TOKEN)"
+  domain="$(read_access_value domain)"
+  token="$(read_config_value AGENT_TOKEN)"
   ip="$(server_ip)"
+  db="$(database_path)"
 
   log "访问信息"
   if [[ -n "$domain" ]]; then
@@ -70,16 +116,22 @@ show_access_info() {
   if [[ -n "$token" ]]; then
     echo "AGENT_TOKEN: ${token}"
   fi
+  echo "SQLite: ${db}"
 }
 
 run_install() {
   local install_system_packages="$1"
   local sync_python_deps="$2"
 
-  log "同步 Files Agent"
+  log "同步 File Panel"
   INSTALL_SYSTEM_PACKAGES="$install_system_packages" \
   SYNC_PYTHON_DEPS="$sync_python_deps" \
   bash "$INSTALL_SCRIPT"
+}
+
+start_agent() {
+  log "启动 ${SERVICE_NAME}"
+  systemctl start "$SERVICE_NAME"
 }
 
 restart_agent() {
@@ -87,9 +139,14 @@ restart_agent() {
   systemctl restart "$SERVICE_NAME"
 }
 
+stop_agent() {
+  log "停止 ${SERVICE_NAME}"
+  systemctl stop "$SERVICE_NAME"
+}
+
 status_agent() {
   log "服务状态"
-  systemctl status "$SERVICE_NAME" --no-pager --lines=30
+  systemctl status "$SERVICE_NAME" --no-pager --lines=30 || true
 }
 
 logs_agent() {
@@ -119,28 +176,37 @@ quick_reload() {
   show_access_info
 }
 
+uninstall_panel() {
+  log "卸载 File Panel"
+  bash "$UNINSTALL_SCRIPT"
+}
+
 show_help() {
   cat <<'EOF'
 用法:
-  bash scripts/agentctl.sh <command>
+  file-panel <command>
 
 命令:
-  full-install  首次安装或补系统依赖，等价于执行完整 install_agent.sh 后重启
-  redeploy      跳过 apt，只同步代码和 Python 依赖，然后重启服务
-  quick         跳过 apt 和 pip，只同步代码后重启服务，适合频繁前后端测试
-  restart       仅重启 files-agent
-  status        查看 files-agent 状态
+  start         启动服务
+  restart       重启服务
+  stop          停止服务
+  status        查看服务状态
   logs [n]      查看最近 n 行日志，默认 80 行
-  info          输出当前访问地址和 AGENT_TOKEN
+  info          输出当前入口、访问令牌和 SQLite 路径
+  uninstall     一键卸载 File Panel 及 SQLite 数据
+  full-install  首次安装或补系统依赖，然后重启服务
+  redeploy      跳过 apt，只同步代码和 Python 依赖，然后重启服务
+  quick         跳过 apt 和 pip，只同步代码后重启服务
   help          显示帮助
 
 常用:
-  bash scripts/agentctl.sh quick
-  bash scripts/agentctl.sh redeploy
+  file-panel start
+  file-panel restart
+  file-panel uninstall
 EOF
 }
 
-command="${1:-redeploy}"
+command="${1:-status}"
 shift || true
 
 case "$command" in
@@ -159,11 +225,22 @@ case "$command" in
     ensure_root "$command" "$@"
     quick_reload
     ;;
+  start)
+    ensure_root "$command" "$@"
+    start_agent
+    status_agent
+    show_access_info
+    ;;
   restart)
     ensure_root "$command" "$@"
     restart_agent
     status_agent
     show_access_info
+    ;;
+  stop)
+    ensure_root "$command" "$@"
+    stop_agent
+    status_agent
     ;;
   status)
     ensure_root "$command" "$@"
@@ -176,6 +253,10 @@ case "$command" in
   info)
     ensure_root "$command" "$@"
     show_access_info
+    ;;
+  uninstall)
+    ensure_root "$command" "$@"
+    uninstall_panel
     ;;
   *)
     echo "未知命令: $command" >&2

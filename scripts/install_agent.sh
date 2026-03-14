@@ -6,10 +6,12 @@ APP_DIR="/opt/files-agent"
 ENV_DIR="/etc/files-agent"
 ENV_FILE="$ENV_DIR/files-agent.env"
 STATE_DIR="/var/lib/files-agent"
+DATABASE_PATH="$STATE_DIR/file-panel.db"
 SERVICE_NAME="files-agent"
 NGINX_SERVICE_NAME="nginx"
 NGINX_SITES_AVAILABLE_DIR="/etc/nginx/sites-available"
 NGINX_SITES_ENABLED_DIR="/etc/nginx/sites-enabled"
+GLOBAL_COMMAND_PATH="/usr/local/bin/file-panel"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -23,7 +25,7 @@ fi
 
 if [[ "$INSTALL_SYSTEM_PACKAGES" == "1" ]]; then
   apt-get update
-  apt-get install -y python3 python3-venv python3-pip nginx certbot python3-certbot-nginx
+  apt-get install -y python3 python3-venv python3-pip nginx certbot python3-certbot-nginx sqlite3
 fi
 
 install -d -m 755 "$APP_DIR" "$ENV_DIR" "$STATE_DIR"
@@ -35,6 +37,7 @@ cp -a "$PROJECT_DIR/README.md" "$APP_DIR/"
 cp -a "$PROJECT_DIR/requirements.txt" "$APP_DIR/"
 cp -a "$PROJECT_DIR/.env.example" "$APP_DIR/"
 cp -a "$PROJECT_DIR/systemd/$SERVICE_NAME.service" "/etc/systemd/system/$SERVICE_NAME.service"
+install -m 755 "$PROJECT_DIR/scripts/file-panel" "$GLOBAL_COMMAND_PATH"
 
 if [[ ! -x "$APP_DIR/.venv/bin/python" ]]; then
   python3 -m venv "$APP_DIR/.venv"
@@ -89,6 +92,7 @@ AGENT_TOKEN=$TOKEN
 RESOURCE_SAMPLE_INTERVAL=$SAMPLE_INTERVAL_VALUE
 ENV_FILE_PATH=$ENV_FILE
 STATE_DIR=$STATE_DIR
+DATABASE_PATH=$DATABASE_PATH
 NGINX_SITES_AVAILABLE_DIR=$NGINX_SITES_AVAILABLE_DIR
 NGINX_SITES_ENABLED_DIR=$NGINX_SITES_ENABLED_DIR
 AGENT_SERVICE_NAME=$SERVICE_NAME
@@ -110,10 +114,11 @@ systemctl enable --now "$SERVICE_NAME"
 SERVER_IP="$(hostname -I | awk '{print $1}')"
 
 echo
-echo "Files Agent 安装完成"
+echo "File Panel 安装完成"
 echo "临时访问地址: http://${SERVER_IP}:3000"
 echo "AGENT_TOKEN: ${TOKEN}"
-echo "Nginx: 已启用，域名接入时会自动写入站点配置并调用 certbot"
+echo "SQLite 数据库: ${DATABASE_PATH}"
+echo "全局命令: file-panel start | file-panel restart | file-panel status | file-panel uninstall"
 if [[ -n "$CERTBOT_EMAIL_VALUE" ]]; then
   echo "Certbot 邮箱: ${CERTBOT_EMAIL_VALUE}"
 fi

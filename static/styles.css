@@ -843,6 +843,68 @@ h3 {
   justify-self: start;
 }
 
+.server-form-actions {
+  grid-column: 1 / -1;
+}
+
+.server-list {
+  margin-top: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.server-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+  padding: 16px 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.server-main {
+  min-width: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.server-title-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.server-title-row strong {
+  font-size: 18px;
+  color: var(--text);
+}
+
+.server-chip-row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.server-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(29, 92, 77, 0.08);
+  color: var(--text);
+  border: 1px solid rgba(29, 92, 77, 0.1);
+}
+
+.server-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .footnote {
   margin-top: 14px;
   line-height: 1.6;
@@ -895,7 +957,8 @@ h3 {
   .auth-row,
   .toolbar,
   .file-header,
-  .logs-meta {
+  .logs-meta,
+  .server-row {
     flex-direction: column;
     align-items: stretch;
   }

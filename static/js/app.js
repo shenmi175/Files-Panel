@@ -26,18 +26,20 @@ import { resetLogsState, loadLogsSection } from "./logs.js";
 import { loadResourcesSection } from "./resources.js";
 import {
   configureDomain,
+  handleServersClick,
   loadConfig,
   loadAccess,
+  loadServers,
+  resetServerForm,
   saveConfig,
+  saveServer,
 } from "./settings.js";
 
 let autoRefreshHandle = 0;
 
-
 function canAccessProtectedViews() {
   return !state.authEnabled || Boolean(getToken());
 }
-
 
 async function loadHealth() {
   const response = await fetch("/api/health");
@@ -45,7 +47,6 @@ async function loadHealth() {
   state.authEnabled = Boolean(payload.auth_enabled);
   syncAuthPanel(false);
 }
-
 
 async function loadAgent() {
   const agent = await request("/api/agent");
@@ -59,14 +60,12 @@ async function loadAgent() {
   syncAuthPanel(false);
 }
 
-
 function nextAutoRefreshDelay() {
   if (state.activeView === "dashboard" && state.activeDashboardPanel === "resources") {
     return Math.max((Number(state.resourceSampleInterval) || 15) * 1000, 2000);
   }
   return 15000;
 }
-
 
 function scheduleAutoRefresh() {
   if (autoRefreshHandle) {
@@ -84,7 +83,7 @@ function scheduleAutoRefresh() {
       }
 
       if (state.activeView === "settings") {
-        await loadAccess();
+        await Promise.all([loadAccess(), loadConfig(), loadServers()]);
         return;
       }
 
@@ -92,13 +91,12 @@ function scheduleAutoRefresh() {
         await loadLogsSection();
       }
     } catch {
-      // Keep the background loop alive even if one refresh fails.
+      // Keep background refresh alive even if one request fails.
     } finally {
       scheduleAutoRefresh();
     }
   }, nextAutoRefreshDelay());
 }
-
 
 async function loadDashboardPanel(panel, { forceResourceRefresh = false } = {}) {
   if (panel === "files") {
@@ -107,7 +105,6 @@ async function loadDashboardPanel(panel, { forceResourceRefresh = false } = {}) 
   }
   await loadResourcesSection({ forceRefresh: forceResourceRefresh });
 }
-
 
 async function refreshVisibleView({
   forceResourceRefresh = false,
@@ -119,7 +116,7 @@ async function refreshVisibleView({
   if (state.activeView === "dashboard") {
     tasks.push(loadDashboardPanel(state.activeDashboardPanel, { forceResourceRefresh }));
   } else if (state.activeView === "settings") {
-    tasks.push(loadConfig());
+    tasks.push(loadConfig(), loadServers());
   } else if (state.activeView === "logs") {
     tasks.push(loadLogsSection({ reset: forceLogsReset || !state.logsLoaded }));
   }
@@ -131,7 +128,6 @@ async function refreshVisibleView({
   }
 }
 
-
 async function handleTopLevelViewChange(view) {
   setView(view);
   if (!canAccessProtectedViews()) {
@@ -141,7 +137,7 @@ async function handleTopLevelViewChange(view) {
   }
 
   if (view === "settings") {
-    await Promise.all([loadAccess(), loadConfig()]);
+    await Promise.all([loadAccess(), loadConfig(), loadServers()]);
     scheduleAutoRefresh();
     return;
   }
@@ -160,7 +156,6 @@ async function handleTopLevelViewChange(view) {
   scheduleAutoRefresh();
 }
 
-
 async function handleDashboardPanelChange(panel) {
   setDashboardPanel(panel);
   if (!canAccessProtectedViews()) {
@@ -178,7 +173,6 @@ async function handleDashboardPanelChange(panel) {
   }
   scheduleAutoRefresh();
 }
-
 
 async function saveToken() {
   const nextToken = dom.tokenInput.value.trim();
@@ -202,7 +196,6 @@ async function saveToken() {
   }
 }
 
-
 function clearToken() {
   window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
   state.access = null;
@@ -210,13 +203,14 @@ function clearToken() {
   state.docker = null;
   state.filesLoaded = false;
   state.selectedEntry = null;
+  state.servers = [];
+  resetServerForm();
   resetLogsState();
   syncAuthPanel(true);
   clearProtectedViews("输入访问令牌后即可继续操作");
   scheduleAutoRefresh();
   showStatus("已清除当前会话令牌", "info");
 }
-
 
 function wireEvents() {
   dom.refreshButton.addEventListener("click", () =>
@@ -256,6 +250,9 @@ function wireEvents() {
   dom.clearTokenButton.addEventListener("click", clearToken);
   dom.domainForm.addEventListener("submit", configureDomain);
   dom.configForm.addEventListener("submit", saveConfig);
+  dom.serverForm.addEventListener("submit", saveServer);
+  dom.resetServerFormButton.addEventListener("click", resetServerForm);
+  dom.serversListEl.addEventListener("click", handleServersClick);
   dom.tokenInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
       event.preventDefault();
@@ -277,11 +274,11 @@ function wireEvents() {
   });
 }
 
-
 async function boot() {
   setDashboardPanel(state.activeDashboardPanel);
   setLogLevel(state.logLevel);
   setView(getViewFromHash());
+  resetServerForm();
   resetLogsState();
   try {
     await loadHealth();
@@ -289,7 +286,7 @@ async function boot() {
     if (!state.authEnabled || getToken()) {
       await refreshVisibleView({ forceLogsReset: true });
     } else {
-      clearProtectedViews("输入访问令牌后即可读取本机信息");
+      clearProtectedViews("输入访问令牌后即可读取节点信息");
     }
   } catch (error) {
     clearProtectedViews("初始化失败");
@@ -298,7 +295,6 @@ async function boot() {
     scheduleAutoRefresh();
   }
 }
-
 
 wireEvents();
 boot();

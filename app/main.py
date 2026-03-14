@@ -5,8 +5,9 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.core.settings import SETTINGS, STATIC_DIR
-from app.routes import access_router, files_router, resources_router, runtime_router, system_router
+from app.routes import access_router, files_router, resources_router, runtime_router, servers_router, system_router
 from app.services import resources as resource_service
+from app.services import servers as server_service
 
 
 def create_app() -> FastAPI:
@@ -15,8 +16,10 @@ def create_app() -> FastAPI:
     application.include_router(access_router)
     application.include_router(resources_router)
     application.include_router(runtime_router)
+    application.include_router(servers_router)
     application.include_router(files_router)
     application.add_event_handler("startup", resource_service.on_startup)
+    application.add_event_handler("startup", server_service.sync_local_server_record)
     application.add_event_handler("shutdown", resource_service.on_shutdown)
     application.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     return application

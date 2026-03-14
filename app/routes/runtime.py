@@ -11,12 +11,12 @@ router = APIRouter(prefix="/api/runtime", tags=["runtime"], dependencies=[Depend
 
 
 @router.get("/docker", response_model=DockerStatusResponse)
-async def get_docker_status() -> DockerStatusResponse:
+def get_docker_status() -> DockerStatusResponse:
     return runtime_service.get_docker_status()
 
 
 @router.get("/logs", response_model=LogsResponse)
-async def get_runtime_logs(
+def get_runtime_logs(
     limit: int = Query(default=200, ge=20, le=200),
     cursor: str | None = Query(default=None),
     level: str = Query(default="info"),

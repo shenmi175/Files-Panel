@@ -12,7 +12,7 @@ router = APIRouter(prefix="/api/files", tags=["files"], dependencies=[Depends(re
 
 
 @router.get("", response_model=FileListResponse)
-async def list_files(
+def list_files(
     path: str | None = Query(default=None),
     show_hidden: bool = Query(default=False),
 ) -> FileListResponse:
@@ -20,22 +20,22 @@ async def list_files(
 
 
 @router.post("/mkdir", response_model=MessageResponse)
-async def create_directory(request: CreateDirectoryRequest) -> MessageResponse:
+def create_directory(request: CreateDirectoryRequest) -> MessageResponse:
     return file_service.create_directory(request)
 
 
 @router.delete("", response_model=MessageResponse)
-async def delete_path(path: str = Query(...)) -> MessageResponse:
+def delete_path(path: str = Query(...)) -> MessageResponse:
     return file_service.delete_path(path)
 
 
 @router.post("/rename", response_model=MessageResponse)
-async def rename_path(request: RenameFileRequest) -> MessageResponse:
+def rename_path(request: RenameFileRequest) -> MessageResponse:
     return file_service.rename_path(request)
 
 
 @router.post("/upload", response_model=MessageResponse)
-async def upload_file(
+def upload_file(
     file: UploadFile = File(...),
     path: str | None = Query(default=None),
 ) -> MessageResponse:
@@ -43,5 +43,5 @@ async def upload_file(
 
 
 @router.get("/download")
-async def download_file(path: str = Query(...)) -> FileResponse:
+def download_file(path: str = Query(...)) -> FileResponse:
     return file_service.download_file(path)

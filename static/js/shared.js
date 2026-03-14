@@ -18,6 +18,7 @@ export const state = {
   logsCursor: null,
   logLines: [],
   logLevel: "info",
+  servers: [],
 };
 
 export const dom = {
@@ -50,6 +51,16 @@ export const dom = {
   configCertbotEmailInput: document.getElementById("config-certbot-email"),
   configAllowPublicInput: document.getElementById("config-allow-public"),
   configAllowRestartInput: document.getElementById("config-allow-restart"),
+  serverForm: document.getElementById("server-form"),
+  serverIdInput: document.getElementById("server-id"),
+  serverNameInput: document.getElementById("server-name"),
+  serverBaseUrlInput: document.getElementById("server-base-url"),
+  serverWireguardIpInput: document.getElementById("server-wireguard-ip"),
+  serverTokenInput: document.getElementById("server-token"),
+  serverEnabledInput: document.getElementById("server-enabled"),
+  resetServerFormButton: document.getElementById("reset-server-form"),
+  serversSummaryEl: document.getElementById("servers-summary"),
+  serversListEl: document.getElementById("servers-list"),
   filesEl: document.getElementById("files"),
   activePathLabel: document.getElementById("active-path"),
   pathBreadcrumbsEl: document.getElementById("path-breadcrumbs"),
@@ -115,7 +126,7 @@ export function normalizeFeatureError(error, featureName) {
   if (error?.message !== "Not Found") {
     return error?.message || `${featureName} 加载失败`;
   }
-  return `${featureName} 接口未找到。当前运行中的 agent 还是旧版本，请执行 systemctl restart files-agent 后再刷新页面。`;
+  return `${featureName} 接口未找到。当前运行中的服务版本较旧，请执行 file-panel restart 后刷新页面。`;
 }
 
 export async function request(path, options = {}) {
@@ -305,7 +316,7 @@ export function updateHeroAccess() {
     dom.agentAuthEl.textContent = state.authEnabled
       ? getToken()
         ? "临时 IP 入口 + Bearer Token"
-        : "临时 IP 入口，需 Bearer Token"
+        : "临时 IP 入口，需要 Bearer Token"
       : "当前允许通过 IP:端口 访问";
     return;
   }
@@ -314,7 +325,7 @@ export function updateHeroAccess() {
   dom.agentAuthEl.textContent = state.authEnabled
     ? getToken()
       ? "仅本地访问，Bearer Token 已启用"
-      : "仅本地访问，需 Bearer Token"
+      : "仅本地访问，需要 Bearer Token"
     : "仅本地访问";
 }
 
@@ -373,11 +384,18 @@ export function setConfigPlaceholder(message) {
   dom.configSummaryEl.textContent = message;
 }
 
+export function setServersPlaceholder(message) {
+  dom.serversSummaryEl.textContent = message;
+  dom.serversListEl.className = "server-list empty";
+  dom.serversListEl.textContent = message;
+}
+
 export function clearProtectedViews(message) {
   setResourcesPlaceholder(message);
   setChartPlaceholder(message);
   setFilesPlaceholder(message);
   setAccessPlaceholder(message);
   setConfigPlaceholder(message);
+  setServersPlaceholder(message);
   setLogsPlaceholder(message);
 }

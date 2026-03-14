@@ -1,10 +1,12 @@
 import {
   dom,
+  escapeHtml,
   metricCard,
   normalizeFeatureError,
   request,
   setAccessPlaceholder,
   setConfigPlaceholder,
+  setServersPlaceholder,
   showStatus,
   state,
   updateHeroAccess,
@@ -16,12 +18,12 @@ export function renderAccess(payload) {
 
   if (payload.public_url) {
     dom.accessSummaryEl.textContent = payload.restart_pending
-      ? `域名已接入：${payload.public_url}，等待 agent 切回本地监听`
+      ? `域名已接入：${payload.public_url}，等待服务切回本地监听`
       : `域名已接入：${payload.public_url}`;
   } else if (payload.public_ip_access_enabled) {
     dom.accessSummaryEl.textContent = `当前临时开放 IP:${payload.desired_bind_port} 访问`;
   } else {
-    dom.accessSummaryEl.textContent = "当前只接受本地访问";
+    dom.accessSummaryEl.textContent = "当前仅接受本地访问";
   }
 
   const publicEntry = payload.public_url
@@ -46,7 +48,7 @@ export function renderAccess(payload) {
     metricCard({
       label: "目标监听",
       value: `${payload.desired_bind_host}:${payload.desired_bind_port}`,
-      note: payload.public_ip_access_enabled ? "仍允许通过 IP 访问" : "域名完成后只保留本地监听",
+      note: payload.public_ip_access_enabled ? "仍允许通过 IP 访问" : "域名完成后仅保留本地监听",
       tone: "tone-green",
     }),
     metricCard({
@@ -61,7 +63,7 @@ export function renderAccess(payload) {
       note: payload.https_enabled
         ? "HTTPS 已就绪"
         : payload.certbot_available
-          ? "证书将在域名接入时申请"
+          ? "证书会在域名接入时申请"
           : "未检测到 certbot",
       tone: "tone-olive",
     }),
@@ -81,7 +83,7 @@ export function renderConfig(config) {
   dom.configSummaryEl.className = "metric-grid";
   dom.configSummaryEl.innerHTML = [
     metricCard({
-      label: "固定根目录",
+      label: "根目录",
       value: config.agent_root,
       note: "文件操作不会越过这个边界",
       tone: "tone-accent",
@@ -94,17 +96,97 @@ export function renderConfig(config) {
     }),
     metricCard({
       label: "域名状态",
-      value: config.public_domain || "未接入域名",
-      note: config.restart_pending ? "存在待重启生效的参数" : "当前环境文件已同步",
+      value: config.public_domain || "尚未接入域名",
+      note: config.restart_pending ? "存在待重启生效的参数" : "SQLite 配置已同步",
       tone: "tone-amber",
     }),
     metricCard({
-      label: "鉴权 / 证书",
+      label: "令牌 / 存储",
       value: config.token_configured ? "Bearer Token 已配置" : "未配置 Token",
-      note: `采样 ${config.resource_sample_interval} 秒 · ${config.certbot_email || "未设置 Certbot 邮箱"}`,
+      note: `采样 ${config.resource_sample_interval} 秒，数据库 ${config.database_path}`,
       tone: "tone-olive",
     }),
   ].join("");
+}
+
+function serverBadges(server) {
+  const badges = [];
+  badges.push(server.is_local ? "本机节点" : "远程节点");
+  badges.push(server.enabled ? "已启用" : "已停用");
+  if (server.wireguard_ip) {
+    badges.push(`WG ${server.wireguard_ip}`);
+  }
+  return badges
+    .map((badge) => `<span class="server-chip">${escapeHtml(badge)}</span>`)
+    .join("");
+}
+
+function serverActions(server) {
+  if (server.is_local) {
+    return `<span class="ghost-chip">自动维护</span>`;
+  }
+  return `
+    <button type="button" class="secondary server-action" data-action="edit" data-id="${server.id}">
+      编辑
+    </button>
+    <button type="button" class="secondary server-action" data-action="delete" data-id="${server.id}">
+      删除
+    </button>
+  `;
+}
+
+export function resetServerForm() {
+  dom.serverIdInput.value = "";
+  dom.serverNameInput.value = "";
+  dom.serverBaseUrlInput.value = "";
+  dom.serverWireguardIpInput.value = "";
+  dom.serverTokenInput.value = "";
+  dom.serverEnabledInput.checked = true;
+}
+
+function fillServerForm(server) {
+  dom.serverIdInput.value = String(server.id);
+  dom.serverNameInput.value = server.name;
+  dom.serverBaseUrlInput.value = server.base_url || "";
+  dom.serverWireguardIpInput.value = server.wireguard_ip || "";
+  dom.serverTokenInput.value = "";
+  dom.serverEnabledInput.checked = server.enabled;
+}
+
+export function renderServers(payload) {
+  state.servers = payload.items || [];
+  const enabledCount = state.servers.filter((item) => item.enabled).length;
+  dom.serversSummaryEl.textContent = `已登记 ${state.servers.length} 个节点，其中 ${enabledCount} 个启用。`;
+
+  if (!state.servers.length) {
+    setServersPlaceholder("当前还没有登记节点");
+    return;
+  }
+
+  dom.serversListEl.className = "server-list";
+  dom.serversListEl.innerHTML = state.servers
+    .map(
+      (server) => `
+        <div class="server-row">
+          <div class="server-main">
+            <div class="server-title-row">
+              <strong>${escapeHtml(server.name)}</strong>
+              <div class="server-chip-row">${serverBadges(server)}</div>
+            </div>
+            <small>${escapeHtml(server.base_url || "未设置节点 URL")}</small>
+            <small>${
+              server.last_seen_at
+                ? `最近同步 ${escapeHtml(new Date(server.last_seen_at).toLocaleString("zh-CN", { hour12: false }))}`
+                : "尚未记录最近同步时间"
+            }</small>
+          </div>
+          <div class="server-actions">
+            ${serverActions(server)}
+          </div>
+        </div>
+      `
+    )
+    .join("");
 }
 
 export async function loadAccess() {
@@ -115,17 +197,26 @@ export async function loadConfig() {
   renderConfig(await request("/api/config"));
 }
 
-export async function refreshSettings({ includeConfig = true } = {}) {
-  const [accessResult, configResult] = await Promise.allSettled([
+export async function loadServers() {
+  renderServers(await request("/api/servers"));
+}
+
+export async function refreshSettings({ includeConfig = true, includeServers = true } = {}) {
+  const results = await Promise.allSettled([
     loadAccess(),
     includeConfig ? loadConfig() : Promise.resolve(),
+    includeServers ? loadServers() : Promise.resolve(),
   ]);
-  if (accessResult.status === "rejected") {
-    setAccessPlaceholder(accessResult.reason.message);
-    throw accessResult.reason;
+
+  if (results[0].status === "rejected") {
+    setAccessPlaceholder(results[0].reason.message);
+    throw results[0].reason;
   }
-  if (includeConfig && configResult.status === "rejected") {
-    setConfigPlaceholder(normalizeFeatureError(configResult.reason, "固定参数"));
+  if (includeConfig && results[1].status === "rejected") {
+    setConfigPlaceholder(normalizeFeatureError(results[1].reason, "运行配置"));
+  }
+  if (includeServers && results[2].status === "rejected") {
+    setServersPlaceholder(normalizeFeatureError(results[2].reason, "节点目录"));
   }
 }
 
@@ -146,7 +237,7 @@ export async function configureDomain(event) {
     dom.domainInput.value = "";
     showStatus(
       payload.restart_scheduled
-        ? `域名已接入：${payload.public_url}。agent 将自动切回仅本地监听。`
+        ? `域名已接入：${payload.public_url}。服务将自动切回仅本地监听。`
         : `域名已接入：${payload.public_url}`,
       "success"
     );
@@ -182,10 +273,10 @@ export async function saveConfig(event) {
     renderConfig(payload.config);
     await loadAccess().catch(() => {});
     const baseMessage = payload.restart_scheduled
-      ? "固定参数已保存，agent 正在重启应用新参数"
+      ? "运行配置已保存，服务正在重启应用新参数"
       : payload.restart_required
-        ? "固定参数已保存，等待你手动重启 agent 生效"
-        : "固定参数已保存";
+        ? "运行配置已保存，等待你手动重启服务后生效"
+        : "运行配置已保存";
     showStatus(
       nextAgentToken
         ? `${baseMessage}；访问令牌已更新，生效后需要使用新令牌重新连接`
@@ -194,5 +285,77 @@ export async function saveConfig(event) {
     );
   } catch (error) {
     showStatus(error.message, "error");
+  }
+}
+
+export async function saveServer(event) {
+  event.preventDefault();
+  const serverId = dom.serverIdInput.value.trim();
+  const payload = {
+    name: dom.serverNameInput.value.trim(),
+    base_url: dom.serverBaseUrlInput.value.trim(),
+    auth_token: dom.serverTokenInput.value.trim(),
+    wireguard_ip: dom.serverWireguardIpInput.value.trim(),
+    enabled: dom.serverEnabledInput.checked,
+  };
+
+  if (!payload.name) {
+    showStatus("请输入节点名称", "error");
+    return;
+  }
+
+  try {
+    const response = await request(serverId ? `/api/servers/${serverId}` : "/api/servers", {
+      method: serverId ? "PUT" : "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    resetServerForm();
+    await loadServers();
+    showStatus(response.message, "success");
+  } catch (error) {
+    showStatus(error.message, "error");
+  }
+}
+
+export async function deleteServer(serverId) {
+  const server = state.servers.find((item) => item.id === Number(serverId));
+  if (!server) {
+    showStatus("节点不存在", "error");
+    return;
+  }
+  if (!window.confirm(`确认删除节点 ${server.name} 吗？`)) {
+    return;
+  }
+
+  try {
+    await request(`/api/servers/${server.id}`, { method: "DELETE" });
+    resetServerForm();
+    await loadServers();
+    showStatus(`已删除节点 ${server.name}`, "success");
+  } catch (error) {
+    showStatus(error.message, "error");
+  }
+}
+
+export function handleServersClick(event) {
+  const button = event.target.closest(".server-action");
+  if (!button) {
+    return;
+  }
+
+  const server = state.servers.find((item) => item.id === Number(button.dataset.id));
+  if (!server) {
+    showStatus("节点不存在", "error");
+    return;
+  }
+
+  if (button.dataset.action === "edit") {
+    fillServerForm(server);
+    return;
+  }
+
+  if (button.dataset.action === "delete") {
+    deleteServer(server.id).catch((error) => showStatus(error.message, "error"));
   }
 }

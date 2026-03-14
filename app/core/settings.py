@@ -6,10 +6,11 @@ import socket
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.core.storage import bootstrap_paths, initialize_storage, load_config_values
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 STATIC_DIR = BASE_DIR / "static"
-ACCESS_STATE_FILE = "access.json"
 RESOURCE_HISTORY_MAX_POINTS = 96
 DEFAULT_RESOURCE_SAMPLE_INTERVAL = 15
 RESOURCE_SAMPLE_INTERVAL_CHOICES = (2, 5, 10, 15)
@@ -29,6 +30,7 @@ class Settings:
     sample_interval_seconds: int
     env_file_path: Path
     state_dir: Path
+    database_path: Path
     nginx_sites_available_dir: Path
     nginx_sites_enabled_dir: Path
     agent_service_name: str | None
@@ -54,14 +56,32 @@ def normalize_resource_sample_interval(
 
 
 def load_settings() -> Settings:
-    host = os.getenv("HOST", "127.0.0.1").strip() or "127.0.0.1"
-    port = int(os.getenv("PORT", "3000"))
-    root_path = Path(os.getenv("AGENT_ROOT", "/")).expanduser().resolve(strict=False)
+    paths = bootstrap_paths()
+    initialize_storage(
+        {
+            "HOST": os.getenv("HOST", "127.0.0.1").strip() or "127.0.0.1",
+            "PORT": os.getenv("PORT", "3000").strip() or "3000",
+            "AGENT_NAME": os.getenv("AGENT_NAME", socket.gethostname()).strip() or socket.gethostname(),
+            "AGENT_ROOT": os.getenv("AGENT_ROOT", "/").strip() or "/",
+            "AGENT_TOKEN": os.getenv("AGENT_TOKEN", "").strip(),
+            "RESOURCE_SAMPLE_INTERVAL": os.getenv("RESOURCE_SAMPLE_INTERVAL", str(DEFAULT_RESOURCE_SAMPLE_INTERVAL)).strip()
+            or str(DEFAULT_RESOURCE_SAMPLE_INTERVAL),
+            "CERTBOT_EMAIL": os.getenv("CERTBOT_EMAIL", "").strip(),
+            "ALLOW_SELF_RESTART": os.getenv("ALLOW_SELF_RESTART", "1").strip() or "1",
+        }
+    )
+    persisted = load_config_values()
+
+    host = persisted.get("HOST", os.getenv("HOST", "127.0.0.1")).strip() or "127.0.0.1"
+    port = int(persisted.get("PORT", os.getenv("PORT", "3000")))
+    root_path = Path(persisted.get("AGENT_ROOT", os.getenv("AGENT_ROOT", "/"))).expanduser().resolve(
+        strict=False
+    )
     if not root_path.exists() or not root_path.is_dir():
         raise RuntimeError(f"AGENT_ROOT is not a directory: {root_path}")
 
-    auth_token = os.getenv("AGENT_TOKEN", "").strip() or None
-    allow_self_restart = os.getenv("ALLOW_SELF_RESTART", "1").strip().lower() not in {
+    auth_token = persisted.get("AGENT_TOKEN", os.getenv("AGENT_TOKEN", "")).strip() or None
+    allow_self_restart = persisted.get("ALLOW_SELF_RESTART", os.getenv("ALLOW_SELF_RESTART", "1")).strip().lower() not in {
         "0",
         "false",
         "no",
@@ -69,14 +89,16 @@ def load_settings() -> Settings:
     return Settings(
         host=host,
         port=port,
-        agent_name=os.getenv("AGENT_NAME", socket.gethostname()).strip() or socket.gethostname(),
+        agent_name=persisted.get("AGENT_NAME", os.getenv("AGENT_NAME", socket.gethostname())).strip()
+        or socket.gethostname(),
         root_path=root_path,
         auth_token=auth_token,
         sample_interval_seconds=normalize_resource_sample_interval(
-            os.getenv("RESOURCE_SAMPLE_INTERVAL"),
+            persisted.get("RESOURCE_SAMPLE_INTERVAL", os.getenv("RESOURCE_SAMPLE_INTERVAL")),
         ),
-        env_file_path=Path(os.getenv("ENV_FILE_PATH", "/etc/files-agent/files-agent.env")).expanduser(),
-        state_dir=Path(os.getenv("STATE_DIR", "/var/lib/files-agent")).expanduser(),
+        env_file_path=paths.env_file_path,
+        state_dir=paths.state_dir,
+        database_path=paths.database_path,
         nginx_sites_available_dir=Path(
             os.getenv("NGINX_SITES_AVAILABLE_DIR", "/etc/nginx/sites-available")
         ).expanduser(),
@@ -85,7 +107,7 @@ def load_settings() -> Settings:
         ).expanduser(),
         agent_service_name=os.getenv("AGENT_SERVICE_NAME", "files-agent").strip() or None,
         nginx_service_name=os.getenv("NGINX_SERVICE_NAME", "nginx").strip() or None,
-        certbot_email=os.getenv("CERTBOT_EMAIL", "").strip() or None,
+        certbot_email=persisted.get("CERTBOT_EMAIL", os.getenv("CERTBOT_EMAIL", "")).strip() or None,
         allow_self_restart=allow_self_restart,
     )
 
