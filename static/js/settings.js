@@ -91,6 +91,7 @@ function scheduleRestartStatusResolution({ tokenWillChange = false } = {}) {
 
 export function renderAccess(payload) {
   state.access = payload;
+  state.accessLoaded = true;
   updateHeroAccess();
 
   if (payload.public_url) {
@@ -149,6 +150,7 @@ export function renderAccess(payload) {
 
 export function renderConfig(config) {
   state.config = config;
+  state.configLoaded = true;
   const sampleInterval = Number(config.resource_sample_interval) || state.resourceSampleInterval || 5;
 
   dom.configAgentNameInput.value = config.agent_name;
@@ -235,6 +237,7 @@ function fillServerForm(server) {
 
 export function renderServers(payload) {
   state.servers = payload.items || [];
+  state.serversLoaded = true;
   const enabledCount = state.servers.filter((item) => item.enabled).length;
   dom.serversSummaryEl.textContent = `已登记 ${state.servers.length} 个节点，其中 ${enabledCount} 个已启用。`;
 
@@ -290,13 +293,16 @@ export async function refreshSettings({ includeConfig = true, includeServers = t
   ]);
 
   if (results[0].status === "rejected") {
+    state.accessLoaded = false;
     setAccessPlaceholder(results[0].reason.message);
     throw results[0].reason;
   }
   if (includeConfig && results[1].status === "rejected") {
+    state.configLoaded = false;
     setConfigPlaceholder(normalizeFeatureError(results[1].reason, "运行配置"));
   }
   if (includeServers && results[2].status === "rejected") {
+    state.serversLoaded = false;
     setServersPlaceholder(normalizeFeatureError(results[2].reason, "节点目录"));
   }
 }

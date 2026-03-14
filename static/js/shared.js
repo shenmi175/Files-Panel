@@ -22,13 +22,18 @@ export const state = {
   showHidden: false,
   resourceSampleInterval: 5,
   activeView: "overview",
+  resourcesLoaded: false,
   filesLoaded: false,
   docker: null,
+  accessLoaded: false,
+  configLoaded: false,
+  serversLoaded: false,
   logsLoaded: false,
   logsCursor: null,
   logLines: [],
   logLevel: "info",
   servers: [],
+  preloadStarted: false,
 };
 
 export const dom = {

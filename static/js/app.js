@@ -34,11 +34,40 @@ import {
   saveServer,
 } from "./settings.js";
 
-const AUTH_REQUIRED_MESSAGE = "请先登录后再访问当前页面";
+const AUTH_REQUIRED_MESSAGE = "请先登录后再访问控制面板。";
 let autoRefreshHandle = 0;
+
+function queueIdleTask(task) {
+  if ("requestIdleCallback" in window) {
+    window.requestIdleCallback(() => {
+      void task();
+    }, { timeout: 1200 });
+    return;
+  }
+  window.setTimeout(() => {
+    void task();
+  }, 180);
+}
 
 function canAccessProtectedViews() {
   return !state.authEnabled || state.isAuthenticated;
+}
+
+function isViewWarm(view) {
+  switch (view) {
+    case "overview":
+      return state.accessLoaded && state.resourcesLoaded;
+    case "files":
+      return state.filesLoaded;
+    case "access":
+      return state.accessLoaded && state.configLoaded;
+    case "nodes":
+      return state.accessLoaded && state.serversLoaded;
+    case "logs":
+      return state.accessLoaded && state.logsLoaded;
+    default:
+      return false;
+  }
 }
 
 function setLoginMessage(message, type = "info") {
@@ -63,7 +92,13 @@ function resetProtectedState() {
   state.access = null;
   state.config = null;
   state.docker = null;
+  state.resourcesLoaded = false;
   state.filesLoaded = false;
+  state.accessLoaded = false;
+  state.configLoaded = false;
+  state.serversLoaded = false;
+  state.logsLoaded = false;
+  state.preloadStarted = false;
   state.selectedEntry = null;
   state.servers = [];
   resetServerForm();
@@ -77,7 +112,7 @@ function showLoginView(message = "") {
   dom.logoutButton.classList.add("hidden");
   clearStatus();
   clearProtectedViews(AUTH_REQUIRED_MESSAGE);
-  setLoginMessage(message || "请输入访问令牌登录");
+  setLoginMessage(message || "请输入访问令牌后登录控制面板。");
   window.setTimeout(() => {
     dom.loginTokenInput?.focus();
   }, 0);
@@ -171,6 +206,32 @@ async function loadCurrentView({
   }
 }
 
+function startBackgroundPreload() {
+  if (!canAccessProtectedViews() || state.preloadStarted) {
+    return;
+  }
+
+  state.preloadStarted = true;
+  queueIdleTask(async () => {
+    const tasks = [];
+
+    if (!(state.accessLoaded && state.configLoaded && state.serversLoaded)) {
+      tasks.push(refreshSettings({ includeConfig: true, includeServers: true }));
+    }
+    if (!state.resourcesLoaded) {
+      tasks.push(loadResourcesSection());
+    }
+    if (!state.filesLoaded) {
+      tasks.push(loadFiles());
+    }
+    if (!state.logsLoaded) {
+      tasks.push(loadLogsSection({ reset: true }));
+    }
+
+    await Promise.allSettled(tasks.map((task) => Promise.resolve(task).catch(() => {})));
+  });
+}
+
 function nextAutoRefreshDelay() {
   if (state.activeView === "overview") {
     return Math.max((Number(state.resourceSampleInterval) || 5) * 1000, 2000);
@@ -242,6 +303,7 @@ async function enterAuthenticatedApp({
     forceFilesReload,
   });
   scheduleAutoRefresh();
+  startBackgroundPreload();
 }
 
 function handleUnauthenticatedState(message) {
@@ -255,7 +317,7 @@ async function submitLogin(event) {
   event.preventDefault();
   const token = dom.loginTokenInput.value.trim();
   if (!token) {
-    setLoginMessage("请输入访问令牌", "error");
+    setLoginMessage("请输入访问令牌。", "error");
     return;
   }
 
@@ -272,6 +334,7 @@ async function submitLogin(event) {
   }
 
   state.isAuthenticated = true;
+  state.preloadStarted = false;
   dom.loginTokenInput.value = "";
   setLoginMessage("");
   await enterAuthenticatedApp({
@@ -290,7 +353,7 @@ async function logout() {
     // The session cookie is best-effort cleared server-side; continue locally.
   }
 
-  handleUnauthenticatedState("已退出登录");
+  handleUnauthenticatedState("登录会话已退出。");
 }
 
 async function handleTopLevelViewChange(view) {
@@ -300,11 +363,20 @@ async function handleTopLevelViewChange(view) {
     return;
   }
 
-  await refreshVisibleView({
+  const refreshPromise = refreshVisibleView({
     forceLogsReset: view === "logs",
     forceFilesReload: view === "files",
   });
+
   scheduleAutoRefresh();
+  startBackgroundPreload();
+
+  if (isViewWarm(view)) {
+    refreshPromise.catch((error) => showStatus(error.message, "error"));
+    return;
+  }
+
+  await refreshPromise;
 }
 
 function wireEvents() {
@@ -370,7 +442,7 @@ function wireEvents() {
     );
   });
   window.addEventListener("auth:expired", (event) => {
-    const message = event.detail?.message || "会话已失效，请重新登录";
+    const message = event.detail?.message || "登录已失效，请重新输入访问令牌。";
     handleUnauthenticatedState(message);
   });
 }
@@ -393,14 +465,14 @@ async function boot() {
         forceFilesReload: state.activeView === "files",
       });
     } else {
-      showLoginView("请输入访问令牌登录");
+      showLoginView("请输入访问令牌后登录控制面板。");
     }
   } catch (error) {
     if (state.authEnabled && !state.isAuthenticated) {
       showLoginView(error.message);
     } else {
       showAppShell();
-      clearProtectedViews("初始化失败");
+      clearProtectedViews("初始化控制面板失败。");
       showStatus(error.message, "error");
     }
   } finally {

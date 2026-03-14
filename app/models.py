@@ -217,6 +217,11 @@ class FileListResponse(BaseModel):
     entries: list[FileEntry]
 
 
+class DownloadLinkResponse(BaseModel):
+    url: str
+    expires_in_seconds: int
+
+
 class ConfigResponse(BaseModel):
     agent_name: str
     agent_root: str

@@ -1,18 +1,25 @@
 from __future__ import annotations
 
+import base64
+import binascii
+import hashlib
+import hmac
+import json
 import mimetypes
 import os
 import shutil
 import stat
 import time
 from pathlib import Path
+from urllib.parse import urlencode
 
-from fastapi import HTTPException, UploadFile
+from fastapi import HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse
 
 from app.core.settings import SETTINGS
 from app.models import (
     CreateDirectoryRequest,
+    DownloadLinkResponse,
     FileEntry,
     FileListResponse,
     MessageResponse,
@@ -21,6 +28,7 @@ from app.models import (
 
 
 FILE_LIST_CACHE_TTL = 2
+DOWNLOAD_LINK_TTL_SECONDS = 120
 _directory_cache: dict[tuple[str, bool], tuple[float, FileListResponse]] = {}
 
 
@@ -57,6 +65,16 @@ def permission_denied_error(target: Path) -> HTTPException:
             "to grant the filepanel user access to that directory"
         ),
     )
+
+
+def resolve_existing_file(path: str) -> Path:
+    target = resolve_path(path)
+    try:
+        if not target.exists() or not target.is_file():
+            raise HTTPException(status_code=404, detail="file not found")
+    except PermissionError as exc:
+        raise permission_denied_error(target.parent) from exc
+    return target
 
 
 def file_type_for(path: Path) -> str:
@@ -215,14 +233,74 @@ def upload_file(file: UploadFile, path: str | None) -> MessageResponse:
     return MessageResponse(message="uploaded")
 
 
-def download_file(path: str) -> FileResponse:
-    target = resolve_path(path)
-    try:
-        if not target.exists() or not target.is_file():
-            raise HTTPException(status_code=404, detail="file not found")
-    except PermissionError as exc:
-        raise permission_denied_error(target.parent) from exc
+def _b64url_encode(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
 
+
+def _b64url_decode(value: str) -> bytes:
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode(value + padding)
+
+
+def _download_signature(payload: bytes) -> bytes:
+    return hmac.new((SETTINGS.auth_token or "").encode("utf-8"), payload, hashlib.sha256).digest()
+
+
+def build_download_token(path: str) -> str:
+    if not SETTINGS.auth_token:
+        return ""
+
+    target = resolve_existing_file(path)
+    payload = json.dumps(
+        {
+            "path": str(target),
+            "exp": int(time.time()) + DOWNLOAD_LINK_TTL_SECONDS,
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+    signature = _download_signature(payload)
+    return f"{_b64url_encode(payload)}.{_b64url_encode(signature)}"
+
+
+def validate_download_token(target: Path, download_token: str | None) -> bool:
+    if not SETTINGS.auth_token:
+        return True
+    if not download_token:
+        return False
+
+    try:
+        encoded_payload, encoded_signature = download_token.split(".", 1)
+        payload = _b64url_decode(encoded_payload)
+        signature = _b64url_decode(encoded_signature)
+        parsed_payload = json.loads(payload.decode("utf-8"))
+    except (ValueError, TypeError, binascii.Error, UnicodeDecodeError, json.JSONDecodeError):
+        return False
+
+    expected_signature = _download_signature(payload)
+    if not hmac.compare_digest(signature, expected_signature):
+        return False
+
+    return (
+        parsed_payload.get("path") == str(target)
+        and int(parsed_payload.get("exp", 0)) >= int(time.time())
+    )
+
+
+def build_download_link(path: str, request: Request) -> DownloadLinkResponse:
+    target = resolve_existing_file(path)
+    params = {"path": str(target)}
+    if SETTINGS.auth_token:
+        params["download_token"] = build_download_token(str(target))
+
+    download_url = f"{request.url_for('download_file')}?{urlencode(params)}"
+    return DownloadLinkResponse(
+        url=download_url,
+        expires_in_seconds=DOWNLOAD_LINK_TTL_SECONDS if SETTINGS.auth_token else 0,
+    )
+
+
+def download_file(path: str) -> FileResponse:
+    target = resolve_existing_file(path)
     media_type, _ = mimetypes.guess_type(target.name)
     return FileResponse(
         path=target,

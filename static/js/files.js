@@ -274,7 +274,10 @@ export async function downloadSelected() {
   }
 
   try {
-    const downloadUrl = `/api/files/download?path=${encodeURIComponent(state.selectedEntry.path)}`;
+    const payload = await request(
+      `/api/files/download-link?path=${encodeURIComponent(state.selectedEntry.path)}`
+    );
+    const downloadUrl = payload.url;
     const anchor = document.createElement("a");
     anchor.href = downloadUrl;
     anchor.download = state.selectedEntry.name;
