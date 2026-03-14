@@ -173,7 +173,7 @@ async function loadCurrentView({
 
 function nextAutoRefreshDelay() {
   if (state.activeView === "overview") {
-    return Math.max((Number(state.resourceSampleInterval) || 15) * 1000, 2000);
+    return Math.max((Number(state.resourceSampleInterval) || 5) * 1000, 2000);
   }
   if (state.activeView === "logs") {
     return 8000;

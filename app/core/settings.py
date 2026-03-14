@@ -13,9 +13,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 STATIC_DIR = BASE_DIR / "static"
 DEFAULT_AGENT_ROOT = Path("/srv/file-panel/data")
 RESOURCE_HISTORY_MAX_POINTS = 96
-DEFAULT_RESOURCE_SAMPLE_INTERVAL = 15
-RESOURCE_SAMPLE_INTERVAL_CHOICES = (2, 5, 10, 15)
-RESOURCE_SNAPSHOT_CACHE_TTL = 3
+DEFAULT_RESOURCE_SAMPLE_INTERVAL = 5
+RESOURCE_SAMPLE_INTERVAL_CHOICES = (5, 10, 15)
+RESOURCE_SNAPSHOT_CACHE_TTL = 1
 DOMAIN_PATTERN = re.compile(
     r"^(?=.{1,253}$)(?!-)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.(?!-)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$"
 )

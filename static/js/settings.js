@@ -16,6 +16,7 @@ const TOKEN_SWITCH_DELAY_MS = 7000;
 const RESTART_RECOVERY_INITIAL_DELAY_MS = 1500;
 const RESTART_RECOVERY_INTERVAL_MS = 1200;
 const RESTART_RECOVERY_MAX_ATTEMPTS = 20;
+const RESOURCE_SAMPLE_INTERVAL_OPTIONS = [5, 10, 15];
 let restartResolutionRunId = 0;
 
 function isLikelyRestartInterruption(error) {
@@ -63,22 +64,27 @@ function scheduleRestartStatusResolution({ tokenWillChange = false } = {}) {
     if (!recovered) {
       showStatus(
         tokenWillChange
-          ? "服务可能仍在重启，请稍后使用新令牌重新连接。"
-          : "服务可能仍在重启，请稍后刷新页面确认配置是否生效。",
+          ? "服务正在应用新令牌，请稍后刷新并重新登录。"
+          : "服务重启时间超过预期，请稍后刷新确认配置是否生效。",
         "info",
         { autoClearMs: 10000 }
       );
       return;
     }
+
     if (tokenWillChange) {
-      showStatus("运行配置已生效，请使用新令牌重新连接。", "info", { autoClearMs: 10000 });
+      showStatus("服务已恢复，请使用新令牌重新登录。", "info", { autoClearMs: 10000 });
+      window.setTimeout(() => {
+        window.location.reload();
+      }, 1200);
       return;
     }
+
     try {
       await refreshSettings();
       showStatus("运行配置已生效。", "success", { autoClearMs: 6000 });
     } catch {
-      showStatus("服务已恢复，请刷新页面确认最新配置。", "info", { autoClearMs: 8000 });
+      showStatus("服务已恢复，请刷新页面确认最新状态。", "info", { autoClearMs: 8000 });
     }
   })();
 }
@@ -92,16 +98,16 @@ export function renderAccess(payload) {
       ? `域名已接入：${payload.public_url}，等待服务切回本地监听`
       : `域名已接入：${payload.public_url}`;
   } else if (payload.public_ip_access_enabled) {
-    dom.accessSummaryEl.textContent = `当前临时开放 IP:${payload.desired_bind_port} 访问`;
+    dom.accessSummaryEl.textContent = `当前允许通过 IP:${payload.desired_bind_port} 临时访问`;
   } else {
-    dom.accessSummaryEl.textContent = "当前仅接受本地访问";
+    dom.accessSummaryEl.textContent = "当前仅允许通过登录会话访问节点。";
   }
 
   const publicEntry = payload.public_url
     ? payload.public_url
     : payload.public_ip_access_enabled
       ? `http://服务器IP:${payload.desired_bind_port}`
-      : "仅本地监听";
+      : "等待接入状态";
   const nginxStatus = payload.nginx_available
     ? payload.nginx_running
       ? "已运行"
@@ -113,19 +119,19 @@ export function renderAccess(payload) {
     metricCard({
       label: "当前监听",
       value: `${payload.current_bind_host}:${payload.current_bind_port}`,
-      note: payload.restart_pending ? "重启后会切换到新的监听地址" : "当前生效",
+      note: payload.restart_pending ? "重启后会切到新的监听地址" : "当前生效",
       tone: "tone-accent",
     }),
     metricCard({
       label: "目标监听",
       value: `${payload.desired_bind_host}:${payload.desired_bind_port}`,
-      note: payload.public_ip_access_enabled ? "仍允许通过 IP 访问" : "域名完成后仅保留本地监听",
+      note: payload.public_ip_access_enabled ? "仍允许通过 IP 入口访问" : "域名完成后仅保留本地监听",
       tone: "tone-green",
     }),
     metricCard({
       label: "对外入口",
       value: publicEntry,
-      note: payload.token_configured ? "访问令牌已配置" : "未配置访问令牌",
+      note: payload.token_configured ? "访问令牌已配置" : "尚未配置访问令牌",
       tone: "tone-amber",
     }),
     metricCard({
@@ -143,17 +149,19 @@ export function renderAccess(payload) {
 
 export function renderConfig(config) {
   state.config = config;
+  const sampleInterval = Number(config.resource_sample_interval) || state.resourceSampleInterval || 5;
+
   dom.configAgentNameInput.value = config.agent_name;
   dom.configAgentRootInput.value = config.agent_root;
   dom.configPortInput.value = String(config.port);
+  dom.configSampleIntervalInput.value = String(sampleInterval);
   dom.configAgentTokenInput.value = "";
   dom.configCertbotEmailInput.value = config.certbot_email || "";
   dom.configAllowPublicInput.checked = config.allow_public_ip;
   dom.configAllowRestartInput.checked = config.allow_self_restart;
-  const sampleInterval = Number(config.resource_sample_interval) || state.resourceSampleInterval || 15;
-  const databasePath = config.database_path || "未返回";
   state.resourceSampleInterval = sampleInterval;
 
+  const databasePath = config.database_path || "未提供";
   dom.configSummaryEl.className = "metric-grid";
   dom.configSummaryEl.innerHTML = [
     metricCard({
@@ -175,8 +183,8 @@ export function renderConfig(config) {
       tone: "tone-amber",
     }),
     metricCard({
-      label: "访问令牌 / 存储",
-      value: config.token_configured ? "访问令牌已配置" : "未配置令牌",
+      label: "令牌 / 存储",
+      value: config.token_configured ? "访问令牌已配置" : "尚未配置访问令牌",
       note: `采样 ${sampleInterval} 秒，数据库 ${databasePath}`,
       tone: "tone-olive",
     }),
@@ -190,9 +198,7 @@ function serverBadges(server) {
   if (server.wireguard_ip) {
     badges.push(`WG ${server.wireguard_ip}`);
   }
-  return badges
-    .map((badge) => `<span class="server-chip">${escapeHtml(badge)}</span>`)
-    .join("");
+  return badges.map((badge) => `<span class="server-chip">${escapeHtml(badge)}</span>`).join("");
 }
 
 function serverActions(server) {
@@ -230,11 +236,10 @@ function fillServerForm(server) {
 export function renderServers(payload) {
   state.servers = payload.items || [];
   const enabledCount = state.servers.filter((item) => item.enabled).length;
-  dom.serversSummaryEl.textContent =
-    `已登记 ${state.servers.length} 个节点，其中 ${enabledCount} 个启用。当前仅维护节点目录。`;
+  dom.serversSummaryEl.textContent = `已登记 ${state.servers.length} 个节点，其中 ${enabledCount} 个已启用。`;
 
   if (!state.servers.length) {
-    setServersPlaceholder("当前还没有登记节点");
+    setServersPlaceholder("当前还没有登记任何节点。");
     return;
   }
 
@@ -248,10 +253,10 @@ export function renderServers(payload) {
               <strong>${escapeHtml(server.name)}</strong>
               <div class="server-chip-row">${serverBadges(server)}</div>
             </div>
-            <small>${escapeHtml(server.base_url || "未设置节点 URL")}</small>
+            <small>${escapeHtml(server.base_url || "尚未配置节点 URL")}</small>
             <small>${
               server.last_seen_at
-                ? `最近同步 ${escapeHtml(new Date(server.last_seen_at).toLocaleString("zh-CN", { hour12: false }))}`
+                ? `最后同步：${escapeHtml(new Date(server.last_seen_at).toLocaleString("zh-CN", { hour12: false }))}`
                 : "尚未记录最近同步时间"
             }</small>
           </div>
@@ -300,7 +305,7 @@ export async function configureDomain(event) {
   event.preventDefault();
   const domain = dom.domainInput.value.trim();
   if (!domain) {
-    showStatus("请输入域名", "error");
+    showStatus("请输入域名。", "error");
     return;
   }
 
@@ -313,14 +318,14 @@ export async function configureDomain(event) {
     dom.domainInput.value = "";
     showStatus(
       payload.restart_scheduled
-        ? `域名已接入：${payload.public_url}。服务将自动切回仅本地监听。`
+        ? `域名已接入：${payload.public_url}，服务正在切回本地监听`
         : `域名已接入：${payload.public_url}`,
       "success"
     );
     await refreshSettings().catch(() => {});
   } catch (error) {
     if (isLikelyRestartInterruption(error)) {
-      showStatus("请求在服务重启时中断，请等待几秒后刷新页面确认域名接入状态。", "info");
+      showStatus("域名接入已提交，服务可能正在重载，请稍后刷新确认。", "info");
       return;
     }
     showStatus(error.message, "error");
@@ -330,9 +335,15 @@ export async function configureDomain(event) {
 export async function saveConfig(event) {
   event.preventDefault();
   const nextPort = Number(dom.configPortInput.value);
+  const nextSampleInterval = Number(dom.configSampleIntervalInput.value);
   const nextAgentToken = dom.configAgentTokenInput.value.trim();
+
   if (!Number.isInteger(nextPort) || nextPort < 1 || nextPort > 65535) {
-    showStatus("监听端口必须是 1-65535 之间的整数", "error");
+    showStatus("监听端口必须在 1 到 65535 之间。", "error");
+    return;
+  }
+  if (!RESOURCE_SAMPLE_INTERVAL_OPTIONS.includes(nextSampleInterval)) {
+    showStatus("资源采样间隔仅支持 5 秒、10 秒或 15 秒。", "error");
     return;
   }
 
@@ -344,6 +355,7 @@ export async function saveConfig(event) {
         agent_name: dom.configAgentNameInput.value.trim(),
         agent_root: dom.configAgentRootInput.value.trim(),
         port: nextPort,
+        resource_sample_interval: nextSampleInterval,
         agent_token: nextAgentToken,
         allow_public_ip: dom.configAllowPublicInput.checked,
         certbot_email: dom.configCertbotEmailInput.value.trim(),
@@ -357,7 +369,7 @@ export async function saveConfig(event) {
     if (payload.restart_scheduled) {
       showStatus(
         tokenWillChange
-          ? "运行配置已保存，服务正在重启应用新参数。访问令牌已更新，恢复后请使用新令牌重新连接。"
+          ? "运行配置已保存，服务正在重启。重启后请使用新令牌重新登录。"
           : "运行配置已保存，服务正在重启应用新参数。",
         "info"
       );
@@ -368,8 +380,8 @@ export async function saveConfig(event) {
     if (payload.restart_required) {
       showStatus(
         tokenWillChange
-          ? "运行配置已保存，请重启服务后使用新令牌重新连接。"
-          : "运行配置已保存，请重启服务应用新参数。",
+          ? "配置已保存。请重启服务后使用新令牌重新登录。"
+          : "配置已保存，重启服务后生效。",
         "info",
         { autoClearMs: 8000 }
       );
@@ -379,7 +391,7 @@ export async function saveConfig(event) {
     showStatus("运行配置已保存。", "success", { autoClearMs: 5000 });
   } catch (error) {
     if (dom.configAllowRestartInput.checked && isLikelyRestartInterruption(error)) {
-      showStatus("请求在服务重启时中断，请等待几秒后确认配置是否生效。", "info", {
+      showStatus("服务正在重启应用新参数，请稍后刷新确认。", "info", {
         autoClearMs: 10000,
       });
       scheduleRestartStatusResolution({ tokenWillChange: Boolean(nextAgentToken) });
@@ -402,11 +414,11 @@ async function copyTokenToClipboard(token) {
 }
 
 function revealToken(token) {
-  window.prompt("新 AGENT_TOKEN，仅显示这一次，请立即保存：", token);
+  window.prompt("新 AGENT_TOKEN 已生成，请立即保存。", token);
 }
 
 export async function resetAgentToken() {
-  if (!window.confirm("重置后旧令牌会失效，继续吗？")) {
+  if (!window.confirm("确认重置当前访问令牌吗？旧令牌会在服务重启后失效。")) {
     return;
   }
 
@@ -415,12 +427,15 @@ export async function resetAgentToken() {
       method: "POST",
     });
     const copied = await copyTokenToClipboard(payload.token);
+    if (!copied) {
+      revealToken(payload.token);
+    }
 
     if (payload.restart_scheduled) {
       showStatus(
         copied
-          ? "令牌已重置，新令牌已复制到剪贴板；页面会在服务重启后自动切换。"
-          : "令牌已重置；请立即保存新令牌，页面会在服务重启后自动切换。",
+          ? "新令牌已复制。服务重启后当前会话会失效，请使用新令牌重新登录。"
+          : "新令牌已生成。服务重启后当前会话会失效，请保存新令牌并重新登录。",
         "info"
       );
       window.setTimeout(() => {
@@ -430,10 +445,7 @@ export async function resetAgentToken() {
     }
 
     revealToken(payload.token);
-    showStatus(
-      "令牌已重置，但服务未自动重启。请执行 sudo file-panel restart，然后使用新令牌重新登录。",
-      "info"
-    );
+    showStatus("新令牌已生成。请保存它，并在重启服务后回到登录页重新登录。", "info");
   } catch (error) {
     showStatus(error.message, "error");
   }
@@ -451,7 +463,7 @@ export async function saveServer(event) {
   };
 
   if (!payload.name) {
-    showStatus("请输入节点名称", "error");
+    showStatus("请输入节点名称。", "error");
     return;
   }
 
@@ -472,7 +484,7 @@ export async function saveServer(event) {
 export async function deleteServer(serverId) {
   const server = state.servers.find((item) => item.id === Number(serverId));
   if (!server) {
-    showStatus("节点不存在", "error");
+    showStatus("节点不存在。", "error");
     return;
   }
   if (!window.confirm(`确认删除节点 ${server.name} 吗？`)) {
@@ -483,7 +495,7 @@ export async function deleteServer(serverId) {
     await request(`/api/servers/${server.id}`, { method: "DELETE" });
     resetServerForm();
     await loadServers();
-    showStatus(`已删除节点 ${server.name}`, "success");
+    showStatus(`已删除节点 ${server.name}。`, "success");
   } catch (error) {
     showStatus(error.message, "error");
   }
@@ -497,7 +509,7 @@ export function handleServersClick(event) {
 
   const server = state.servers.find((item) => item.id === Number(button.dataset.id));
   if (!server) {
-    showStatus("节点不存在", "error");
+    showStatus("节点不存在。", "error");
     return;
   }
 

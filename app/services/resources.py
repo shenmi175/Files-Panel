@@ -41,8 +41,23 @@ _resource_history_last_epoch = 0.0
 _resource_sampler_task: asyncio.Task[None] | None = None
 
 
+def resolve_mount_point(target: os.PathLike[str] | str) -> str:
+    current = os.path.realpath(os.fspath(target))
+    while True:
+        parent = os.path.dirname(current.rstrip(os.sep)) or os.sep
+        try:
+            current_device = os.stat(current).st_dev
+            parent_device = os.stat(parent).st_dev
+        except OSError:
+            return current
+        if current == parent or current_device != parent_device:
+            return current
+        current = parent
+
+
 def sample_inode_stats(target: os.PathLike[str] | str) -> InodeStats:
-    stats = os.statvfs(target)
+    mount_point = resolve_mount_point(target)
+    stats = os.statvfs(mount_point)
     total = stats.f_files
     free = stats.f_ffree
     used = max(total - free, 0)
@@ -52,7 +67,7 @@ def sample_inode_stats(target: os.PathLike[str] | str) -> InodeStats:
         used=used,
         free=free,
         used_percent=used_percent,
-        mount_point=str(target),
+        mount_point=mount_point,
     )
 
 
@@ -184,7 +199,8 @@ def collect_resource_snapshot() -> ResourceSnapshot:
 
     memory = psutil.virtual_memory()
     swap = psutil.swap_memory()
-    disk = psutil.disk_usage(SETTINGS.root_path)
+    mount_point = resolve_mount_point(SETTINGS.root_path)
+    disk = psutil.disk_usage(mount_point)
     try:
         load_one, load_five, load_fifteen = os.getloadavg()
     except OSError:
@@ -194,7 +210,7 @@ def collect_resource_snapshot() -> ResourceSnapshot:
     cpu_used_percent = psutil.cpu_percent(interval=None)
     load_ratio_percent = min((load_one / cpu_count) * 100, 100.0)
     network_stats, network_interfaces, disk_io_stats, disk_devices = sample_resource_rates()
-    inode_stats = sample_inode_stats(SETTINGS.root_path)
+    inode_stats = sample_inode_stats(mount_point)
     process_stats = sample_process_stats()
 
     snapshot = ResourceSnapshot(
@@ -223,7 +239,7 @@ def collect_resource_snapshot() -> ResourceSnapshot:
             used=human_bytes(disk.used),
             available=human_bytes(disk.free),
             used_percent=round(disk.percent, 1),
-            mount_point=str(SETTINGS.root_path),
+            mount_point=mount_point,
         ),
         inode=inode_stats,
         processes=process_stats,
@@ -250,7 +266,7 @@ def get_resource_snapshot(*, force_refresh: bool = False) -> ResourceSnapshot:
 def build_history_point(snapshot: ResourceSnapshot | None = None) -> ResourceHistoryPoint:
     current = snapshot or get_resource_snapshot()
     return ResourceHistoryPoint(
-        timestamp=utc_now(),
+        timestamp=current.sampled_at,
         cpu_used_percent=current.cpu_used_percent,
         memory_used_percent=current.memory.used_percent,
         disk_used_percent=current.root_disk.used_percent,

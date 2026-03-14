@@ -316,11 +316,16 @@ def update_config(request: ConfigUpdateRequest) -> ConfigUpdateResponse:
     certbot_email = (request.certbot_email or "").strip()
     allow_public_ip = bool(request.allow_public_ip)
     allow_self_restart = bool(request.allow_self_restart)
+    sample_interval = normalize_resource_sample_interval(
+        request.resource_sample_interval,
+        fallback=SETTINGS.sample_interval_seconds,
+    )
     next_token = (request.agent_token or "").strip()
 
     config_values["AGENT_NAME"] = agent_name
     config_values["AGENT_ROOT"] = str(agent_root)
     config_values["PORT"] = str(request.port)
+    config_values["RESOURCE_SAMPLE_INTERVAL"] = str(sample_interval)
     config_values["HOST"] = "0.0.0.0" if allow_public_ip else "127.0.0.1"
     config_values["CERTBOT_EMAIL"] = certbot_email
     config_values["ALLOW_SELF_RESTART"] = "1" if allow_self_restart else "0"
