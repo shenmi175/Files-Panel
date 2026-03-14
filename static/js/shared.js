@@ -1,4 +1,5 @@
 export const TOKEN_STORAGE_KEY = "files_agent_token";
+let statusClearHandle = 0;
 
 export const state = {
   agent: null,
@@ -176,12 +177,26 @@ export async function request(path, options = {}) {
   return payload;
 }
 
-export function showStatus(message, type = "info") {
+export function showStatus(message, type = "info", options = {}) {
+  if (statusClearHandle) {
+    window.clearTimeout(statusClearHandle);
+    statusClearHandle = 0;
+  }
   dom.statusEl.textContent = message;
   dom.statusEl.className = `status ${type}`;
+  const autoClearMs = Number(options?.autoClearMs) || 0;
+  if (autoClearMs > 0) {
+    statusClearHandle = window.setTimeout(() => {
+      clearStatus();
+    }, autoClearMs);
+  }
 }
 
 export function clearStatus() {
+  if (statusClearHandle) {
+    window.clearTimeout(statusClearHandle);
+    statusClearHandle = 0;
+  }
   dom.statusEl.textContent = "";
   dom.statusEl.className = "status hidden";
 }

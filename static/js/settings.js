@@ -14,6 +14,10 @@ import {
 } from "./shared.js";
 
 const TOKEN_SWITCH_DELAY_MS = 7000;
+const RESTART_RECOVERY_INITIAL_DELAY_MS = 1500;
+const RESTART_RECOVERY_INTERVAL_MS = 1200;
+const RESTART_RECOVERY_MAX_ATTEMPTS = 20;
+let restartResolutionRunId = 0;
 
 function isLikelyRestartInterruption(error) {
   const message = String(error?.message || "").toLowerCase();
@@ -23,6 +27,61 @@ function isLikelyRestartInterruption(error) {
     || message.includes("load failed")
     || message.includes("network request failed")
   );
+}
+
+function wait(ms) {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+async function waitForAgentHealth() {
+  for (let attempt = 0; attempt < RESTART_RECOVERY_MAX_ATTEMPTS; attempt += 1) {
+    await wait(attempt === 0 ? RESTART_RECOVERY_INITIAL_DELAY_MS : RESTART_RECOVERY_INTERVAL_MS);
+    try {
+      const response = await fetch("/api/health", { cache: "no-store" });
+      if (!response.ok) {
+        continue;
+      }
+      const payload = await response.json();
+      if (payload?.status === "ok") {
+        return true;
+      }
+    } catch {
+      // Service may still be restarting.
+    }
+  }
+  return false;
+}
+
+function scheduleRestartStatusResolution({ tokenWillChange = false } = {}) {
+  const runId = ++restartResolutionRunId;
+  void (async () => {
+    const recovered = await waitForAgentHealth();
+    if (runId !== restartResolutionRunId) {
+      return;
+    }
+    if (!recovered) {
+      showStatus(
+        tokenWillChange
+          ? "服务可能仍在重启，请稍后使用新令牌重新连接。"
+          : "服务可能仍在重启，请稍后刷新页面确认配置是否生效。",
+        "info",
+        { autoClearMs: 10000 }
+      );
+      return;
+    }
+    if (tokenWillChange) {
+      showStatus("运行配置已生效，请使用新令牌重新连接。", "info", { autoClearMs: 10000 });
+      return;
+    }
+    try {
+      await refreshSettings();
+      showStatus("运行配置已生效。", "success", { autoClearMs: 6000 });
+    } catch {
+      showStatus("服务已恢复，请刷新页面确认最新配置。", "info", { autoClearMs: 8000 });
+    }
+  })();
 }
 
 export function renderAccess(payload) {
@@ -293,20 +352,37 @@ export async function saveConfig(event) {
     });
     renderConfig(payload.config);
     await loadAccess().catch(() => {});
-    const baseMessage = payload.restart_scheduled
-      ? "运行配置已保存，服务正在重启应用新参数"
-      : payload.restart_required
-        ? "运行配置已保存，等待你手动重启服务后生效"
-        : "运行配置已保存";
-    showStatus(
-      nextAgentToken
-        ? `${baseMessage}；访问令牌已更新，生效后需要使用新令牌重新连接`
-        : baseMessage,
-      payload.restart_required ? "info" : "success"
-    );
+    const tokenWillChange = Boolean(nextAgentToken);
+
+    if (payload.restart_scheduled) {
+      showStatus(
+        tokenWillChange
+          ? "运行配置已保存，服务正在重启应用新参数。访问令牌已更新，恢复后请使用新令牌重新连接。"
+          : "运行配置已保存，服务正在重启应用新参数。",
+        "info"
+      );
+      scheduleRestartStatusResolution({ tokenWillChange });
+      return;
+    }
+
+    if (payload.restart_required) {
+      showStatus(
+        tokenWillChange
+          ? "运行配置已保存，请重启服务后使用新令牌重新连接。"
+          : "运行配置已保存，请重启服务应用新参数。",
+        "info",
+        { autoClearMs: 8000 }
+      );
+      return;
+    }
+
+    showStatus("运行配置已保存。", "success", { autoClearMs: 5000 });
   } catch (error) {
     if (dom.configAllowRestartInput.checked && isLikelyRestartInterruption(error)) {
-      showStatus("请求在服务重启时中断，请等待几秒后刷新页面确认配置是否生效。", "info");
+      showStatus("请求在服务重启时中断，请等待几秒后确认配置是否生效。", "info", {
+        autoClearMs: 10000,
+      });
+      scheduleRestartStatusResolution({ tokenWillChange: Boolean(nextAgentToken) });
       return;
     }
     showStatus(error.message, "error");
