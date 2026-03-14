@@ -21,12 +21,18 @@ HELPER_INSTALL_PATH="$HELPER_INSTALL_DIR/file-panel-helper.sh"
 SUDOERS_FILE="/etc/sudoers.d/file-panel"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+DEFAULT_PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_DIR="${PROJECT_DIR_OVERRIDE:-$DEFAULT_PROJECT_DIR}"
 INSTALL_SYSTEM_PACKAGES="${INSTALL_SYSTEM_PACKAGES:-1}"
 SYNC_PYTHON_DEPS="${SYNC_PYTHON_DEPS:-1}"
 
 if [[ "${EUID}" -ne 0 ]]; then
   echo "请使用 root 运行安装脚本" >&2
+  exit 1
+fi
+
+if [[ ! -d "$PROJECT_DIR/app" || ! -d "$PROJECT_DIR/static" || ! -d "$PROJECT_DIR/scripts" ]]; then
+  echo "无效的源码目录: $PROJECT_DIR" >&2
   exit 1
 fi
 

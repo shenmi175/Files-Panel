@@ -9,6 +9,7 @@ DB_PATH="${DB_PATH:-}"
 DEFAULT_LOG_LINES="${DEFAULT_LOG_LINES:-80}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALLED_PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 INSTALL_SCRIPT="$SCRIPT_DIR/install_agent.sh"
 UNINSTALL_SCRIPT="$SCRIPT_DIR/uninstall_agent.sh"
 
@@ -88,6 +89,32 @@ log() {
   printf '\n==> %s\n' "$1"
 }
 
+is_project_dir() {
+  local candidate="$1"
+  [[ -n "$candidate" ]] \
+    && [[ -d "$candidate/app" ]] \
+    && [[ -d "$candidate/static" ]] \
+    && [[ -d "$candidate/scripts" ]] \
+    && [[ -f "$candidate/requirements.txt" ]]
+}
+
+resolve_source_project_dir() {
+  local candidate=""
+
+  if [[ -n "${FILE_PANEL_SOURCE_DIR:-}" ]] && is_project_dir "${FILE_PANEL_SOURCE_DIR}"; then
+    candidate="${FILE_PANEL_SOURCE_DIR}"
+  elif is_project_dir "$PWD"; then
+    candidate="$PWD"
+  else
+    candidate="$INSTALLED_PROJECT_DIR"
+  fi
+
+  (
+    cd "$candidate"
+    pwd
+  )
+}
+
 ensure_root() {
   if [[ "${EUID}" -eq 0 ]]; then
     return
@@ -122,10 +149,16 @@ show_access_info() {
 run_install() {
   local install_system_packages="$1"
   local sync_python_deps="$2"
+  local source_project_dir
+  source_project_dir="$(resolve_source_project_dir)"
 
   log "同步 File Panel"
+  if [[ "$source_project_dir" != "$INSTALLED_PROJECT_DIR" ]]; then
+    echo "源码目录: ${source_project_dir}"
+  fi
   INSTALL_SYSTEM_PACKAGES="$install_system_packages" \
   SYNC_PYTHON_DEPS="$sync_python_deps" \
+  PROJECT_DIR_OVERRIDE="$source_project_dir" \
   bash "$INSTALL_SCRIPT"
 }
 
