@@ -46,16 +46,16 @@
           <div class="sidebar-brand">
             <p class="eyebrow">Node Workspace</p>
             <h2>节点工作区</h2>
-            <p class="muted">左侧切换页面，右侧查看当前节点的数据与操作面板。</p>
+            <p class="muted">左侧切换页面，右侧处理当前节点的资源、文件、接入、日志和文档。</p>
           </div>
 
           <nav class="view-switch view-switch-sidebar" aria-label="页面导航">
             <button id="view-overview" class="view-tab is-active" data-view="overview">概览</button>
-            <button id="view-guide" class="view-tab" data-view="guide">说明</button>
             <button id="view-files" class="view-tab" data-view="files">文件</button>
             <button id="view-access" class="view-tab" data-view="access">接入</button>
             <button id="view-nodes" class="view-tab" data-view="nodes">节点</button>
             <button id="view-logs" class="view-tab" data-view="logs">日志</button>
+            <button id="view-guide" class="view-tab" data-view="guide">文档</button>
           </nav>
 
           <button id="logout-button" type="button" class="secondary logout-button hidden">退出登录</button>
@@ -67,7 +67,7 @@
               <div class="hero-copy">
                 <p class="eyebrow">Python + FastAPI Control Plane</p>
                 <h1>文件与资源控制面板</h1>
-                <p class="muted">当前版本管理本机节点，并为多节点目录保留了接入空间。</p>
+                <p class="muted">当前版本管理本机节点，并为后续多节点目录与 WireGuard 组网保留扩展空间。</p>
               </div>
             </div>
 
@@ -127,49 +127,6 @@
                   </div>
                 </div>
                 <div id="resource-chart" class="chart empty">等待趋势数据</div>
-              </div>
-            </article>
-          </section>
-
-          <section id="guide-view" class="view hidden">
-            <article class="panel section-panel guide-panel">
-              <div class="section-head">
-                <div>
-                  <p class="section-kicker">Guide</p>
-                  <h2>资源说明</h2>
-                </div>
-              </div>
-
-              <div class="guide-grid">
-                <article class="guide-card">
-                  <h3>当前 / 1m / 5m</h3>
-                  <p>当前表示最近一次采样值。</p>
-                  <p>1m 和 5m 表示最近 1 分钟与 5 分钟窗口内的平滑结果，用来区分瞬时波动和持续压力。</p>
-                </article>
-
-                <article class="guide-card">
-                  <h3>趋势图</h3>
-                  <p>趋势图读取 SQLite 中持久化保存的采样点，不依赖页面是否持续打开。</p>
-                  <p>范围越大，图表会做降采样，保证折线仍然可读。</p>
-                </article>
-
-                <article class="guide-card">
-                  <h3>CPU 与负载</h3>
-                  <p>CPU 利用率是最近一次采样周期内的使用率。</p>
-                  <p>系统负载基于 Load，并按 CPU 核数归一化，两者相关但不等价。</p>
-                </article>
-
-                <article class="guide-card">
-                  <h3>网络与磁盘 I/O</h3>
-                  <p>网卡和磁盘分项显示当前瞬时速率。</p>
-                  <p>它们更适合观察突发流量或 I/O 峰值，不用于表示长期占用率。</p>
-                </article>
-
-                <article class="guide-card">
-                  <h3>时间范围</h3>
-                  <p>15m、1h、6h、24h、7d 用于切换历史窗口。</p>
-                  <p>页面会显示当前查看范围、采样周期和图表实际分辨率。</p>
-                </article>
               </div>
             </article>
           </section>
@@ -423,6 +380,71 @@
               </div>
 
               <div id="logs-output" class="log-stream empty">正在加载日志内容...</div>
+            </article>
+          </section>
+
+          <section id="guide-view" class="view hidden">
+            <article class="panel section-panel guide-panel">
+              <div class="section-head">
+                <div>
+                  <p class="section-kicker">Docs</p>
+                  <h2>项目文档</h2>
+                  <p class="muted">用于集中说明项目定位、使用方式、开发结构、API 边界和关键概念。</p>
+                </div>
+              </div>
+
+              <div class="guide-grid">
+                <article class="guide-card">
+                  <h3>项目定位</h3>
+                  <p>这是一个部署在目标 Linux 服务器上的单节点 agent 面板。</p>
+                  <p>它负责本机资源采集、文件管理、Docker 运行状态、日志查看和接入配置。</p>
+                  <p>当前节点目录仅负责登记远程节点信息，还不是统一代理执行层。</p>
+                </article>
+
+                <article class="guide-card">
+                  <h3>使用文档</h3>
+                  <p>1. 安装服务后，使用访问令牌登录面板。</p>
+                  <p>2. 在概览页查看资源、趋势和 Docker 状态。</p>
+                  <p>3. 在文件页浏览根目录边界内的文件，执行上传、下载、重命名和删除。</p>
+                  <p>4. 在接入页管理域名、监听、采样间隔和访问令牌。</p>
+                  <p>5. 在日志页查看 systemd 日志并按级别筛选。</p>
+                </article>
+
+                <article class="guide-card">
+                  <h3>开发文档</h3>
+                  <p>后端入口是 FastAPI，位于 <code>app/</code>；前端是静态页面和模块化 JS，位于 <code>static/</code>。</p>
+                  <p>资源采样、文件边界、接入状态、日志和 Docker 状态都由当前节点本机执行。</p>
+                  <p>配置和历史资源样本持久化到 SQLite，便于重启后继续查看趋势。</p>
+                </article>
+
+                <article class="guide-card">
+                  <h3>接口调用</h3>
+                  <p>系统提供健康检查、登录会话、资源、文件、接入、节点和日志接口。</p>
+                  <p>浏览器通过登录会话调用这些 API，不再把令牌长期保存在本地。</p>
+                  <p>如果后续接入 manager，这些接口应继续作为 agent 本地能力暴露。</p>
+                </article>
+
+                <article class="guide-card">
+                  <h3>关键概念</h3>
+                  <p><strong>当前</strong> 表示最近一次采样值。</p>
+                  <p><strong>1m / 5m</strong> 表示最近 1 分钟和 5 分钟窗口内的平滑结果。</p>
+                  <p><strong>趋势图</strong> 显示所选时间范围内的历史采样点，范围越大图表分辨率会越粗。</p>
+                  <p><strong>AGENT_ROOT</strong> 是文件工作区允许访问的根目录边界。</p>
+                </article>
+
+                <article class="guide-card">
+                  <h3>后续扩展</h3>
+                  <p>如果要管理 2-10 台服务器，建议保持“每台机器一个 agent”。</p>
+                  <p>WireGuard 更适合作为管理平面网络，让 agent 之间通过私网互通。</p>
+                  <p>真正的多节点统一执行需要额外的 manager / proxy 层，而不仅是节点登记。</p>
+                </article>
+
+                <article class="guide-card">
+                  <h3>仓库文档</h3>
+                  <p>更详细的开发和调用说明已写入仓库 <code>docs/</code> 目录。</p>
+                  <p>建议从 <code>README.md</code> 进入，再查看架构、使用、API 和概念说明文档。</p>
+                </article>
+              </div>
             </article>
           </section>
         </div>
