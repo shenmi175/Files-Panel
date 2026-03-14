@@ -4,14 +4,15 @@ import {
   dom,
   getToken,
   getViewFromHash,
+  persistToken,
   request,
+  removePersistedToken,
   setDashboardPanel,
   setLogLevel,
   setView,
   showStatus,
   state,
   syncAuthPanel,
-  TOKEN_STORAGE_KEY,
 } from "./shared.js";
 import {
   createDirectory,
@@ -183,7 +184,7 @@ async function saveToken() {
     return;
   }
 
-  window.sessionStorage.setItem(TOKEN_STORAGE_KEY, nextToken);
+  persistToken(nextToken);
   dom.tokenInput.value = "";
   syncAuthPanel(false);
   try {
@@ -191,7 +192,7 @@ async function saveToken() {
     scheduleAutoRefresh();
     showStatus("访问令牌已生效", "success");
   } catch (error) {
-    window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+    removePersistedToken();
     syncAuthPanel(true);
     scheduleAutoRefresh();
     showStatus(error.message, "error");
@@ -199,7 +200,7 @@ async function saveToken() {
 }
 
 function clearToken() {
-  window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+  removePersistedToken();
   state.access = null;
   state.config = null;
   state.docker = null;

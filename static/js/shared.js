@@ -109,7 +109,29 @@ export function escapeHtml(value) {
 }
 
 export function getToken() {
-  return window.sessionStorage.getItem(TOKEN_STORAGE_KEY) || "";
+  const persistentToken = window.localStorage.getItem(TOKEN_STORAGE_KEY) || "";
+  if (persistentToken) {
+    return persistentToken;
+  }
+
+  const legacySessionToken = window.sessionStorage.getItem(TOKEN_STORAGE_KEY) || "";
+  if (legacySessionToken) {
+    window.localStorage.setItem(TOKEN_STORAGE_KEY, legacySessionToken);
+    window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+    return legacySessionToken;
+  }
+
+  return "";
+}
+
+export function persistToken(token) {
+  window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
+  window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+}
+
+export function removePersistedToken() {
+  window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+  window.sessionStorage.removeItem(TOKEN_STORAGE_KEY);
 }
 
 export function formatError(payload) {
