@@ -7,7 +7,6 @@ import {
   persistToken,
   request,
   removePersistedToken,
-  setDashboardPanel,
   setLogLevel,
   setView,
   showStatus,
@@ -23,7 +22,7 @@ import {
   renameSelected,
   uploadFile,
 } from "./files.js";
-import { resetLogsState, loadLogsSection } from "./logs.js";
+import { loadLogsSection, resetLogsState } from "./logs.js";
 import { loadResourcesSection } from "./resources.js";
 import {
   configureDomain,
@@ -36,25 +35,8 @@ import {
   saveServer,
 } from "./settings.js";
 
+const AUTH_REQUIRED_MESSAGE = "输入访问令牌后即可读取当前页内容";
 let autoRefreshHandle = 0;
-
-function ensureConfigResetTokenButton() {
-  if (dom.configResetTokenButton) {
-    return;
-  }
-  const saveButton = document.getElementById("save-config");
-  if (!saveButton || !saveButton.parentElement) {
-    return;
-  }
-
-  const button = document.createElement("button");
-  button.id = "config-reset-token";
-  button.type = "button";
-  button.className = "secondary";
-  button.textContent = "重置令牌";
-  saveButton.parentElement.insertBefore(button, saveButton);
-  dom.configResetTokenButton = button;
-}
 
 function canAccessProtectedViews() {
   return !state.authEnabled || Boolean(getToken());
@@ -79,9 +61,47 @@ async function loadAgent() {
   syncAuthPanel(false);
 }
 
+async function loadCurrentView({
+  forceResourceRefresh = false,
+  forceLogsReset = false,
+  forceFilesReload = false,
+} = {}) {
+  switch (state.activeView) {
+    case "overview":
+      await Promise.all([
+        loadAccess(),
+        loadResourcesSection({ forceRefresh: forceResourceRefresh }),
+      ]);
+      return;
+    case "files":
+      await Promise.all([
+        loadAccess(),
+        forceFilesReload || !state.filesLoaded ? loadFiles() : Promise.resolve(),
+      ]);
+      return;
+    case "access":
+      await refreshSettings({ includeConfig: true, includeServers: false });
+      return;
+    case "nodes":
+      await refreshSettings({ includeConfig: false, includeServers: true });
+      return;
+    case "logs":
+      await Promise.all([
+        loadAccess(),
+        loadLogsSection({ reset: forceLogsReset || !state.logsLoaded }),
+      ]);
+      return;
+    default:
+      await Promise.all([loadAccess(), loadResourcesSection()]);
+  }
+}
+
 function nextAutoRefreshDelay() {
-  if (state.activeView === "dashboard" && state.activeDashboardPanel === "resources") {
+  if (state.activeView === "overview") {
     return Math.max((Number(state.resourceSampleInterval) || 15) * 1000, 2000);
+  }
+  if (state.activeView === "logs") {
+    return 8000;
   }
   return 15000;
 }
@@ -96,18 +116,22 @@ function scheduleAutoRefresh() {
         return;
       }
 
-      if (state.activeView === "dashboard" && state.activeDashboardPanel === "resources") {
-        await loadResourcesSection();
-        return;
-      }
-
-      if (state.activeView === "settings") {
-        await refreshSettings();
-        return;
-      }
-
-      if (state.activeView === "logs") {
-        await loadLogsSection();
+      switch (state.activeView) {
+        case "overview":
+          await Promise.all([loadAccess(), loadResourcesSection()]);
+          return;
+        case "access":
+          await refreshSettings({ includeConfig: true, includeServers: false });
+          return;
+        case "nodes":
+          await refreshSettings({ includeConfig: false, includeServers: true });
+          return;
+        case "logs":
+          await Promise.all([loadAccess(), loadLogsSection()]);
+          return;
+        case "files":
+        default:
+          await loadAccess();
       }
     } catch {
       // Keep background refresh alive even if one request fails.
@@ -117,82 +141,31 @@ function scheduleAutoRefresh() {
   }, nextAutoRefreshDelay());
 }
 
-async function loadDashboardPanel(panel, { forceResourceRefresh = false } = {}) {
-  if (panel === "files") {
-    await loadFiles();
-    return;
-  }
-  await loadResourcesSection({ forceRefresh: forceResourceRefresh });
-}
-
 async function refreshVisibleView({
   forceResourceRefresh = false,
   forceLogsReset = false,
+  forceFilesReload = false,
 } = {}) {
   clearStatus();
-  if (state.activeView === "settings") {
-    await refreshSettings();
-    return;
-  }
-
-  const tasks = [loadAccess()];
-
-  if (state.activeView === "dashboard") {
-    tasks.push(loadDashboardPanel(state.activeDashboardPanel, { forceResourceRefresh }));
-  } else if (state.activeView === "logs") {
-    tasks.push(loadLogsSection({ reset: forceLogsReset || !state.logsLoaded }));
-  }
-
-  const results = await Promise.allSettled(tasks);
-  const failed = results.find((result) => result.status === "rejected");
-  if (failed?.status === "rejected") {
-    throw failed.reason;
-  }
+  await loadCurrentView({
+    forceResourceRefresh,
+    forceLogsReset,
+    forceFilesReload,
+  });
 }
 
 async function handleTopLevelViewChange(view) {
   setView(view);
   if (!canAccessProtectedViews()) {
-    clearProtectedViews("输入访问令牌后即可继续操作");
+    clearProtectedViews(AUTH_REQUIRED_MESSAGE);
     scheduleAutoRefresh();
     return;
   }
 
-  if (view === "settings") {
-    await refreshSettings();
-    scheduleAutoRefresh();
-    return;
-  }
-
-  await loadAccess();
-
-  if (view === "dashboard") {
-    await loadDashboardPanel(state.activeDashboardPanel);
-    scheduleAutoRefresh();
-    return;
-  }
-
-  if (view === "logs") {
-    await loadLogsSection({ reset: !state.logsLoaded });
-  }
-  scheduleAutoRefresh();
-}
-
-async function handleDashboardPanelChange(panel) {
-  setDashboardPanel(panel);
-  if (!canAccessProtectedViews()) {
-    clearProtectedViews("输入访问令牌后即可继续操作");
-    scheduleAutoRefresh();
-    return;
-  }
-  if (panel === "files" && !state.filesLoaded) {
-    await loadFiles();
-    scheduleAutoRefresh();
-    return;
-  }
-  if (panel === "resources") {
-    await loadResourcesSection();
-  }
+  await refreshVisibleView({
+    forceLogsReset: view === "logs",
+    forceFilesReload: view === "files",
+  });
   scheduleAutoRefresh();
 }
 
@@ -207,7 +180,10 @@ async function saveToken() {
   dom.tokenInput.value = "";
   syncAuthPanel(false);
   try {
-    await refreshVisibleView({ forceLogsReset: true });
+    await refreshVisibleView({
+      forceLogsReset: state.activeView === "logs",
+      forceFilesReload: state.activeView === "files",
+    });
     scheduleAutoRefresh();
     showStatus("访问令牌已生效", "success");
   } catch (error) {
@@ -229,14 +205,16 @@ function clearToken() {
   resetServerForm();
   resetLogsState();
   syncAuthPanel(true);
-  clearProtectedViews("输入访问令牌后即可继续操作");
+  clearProtectedViews(AUTH_REQUIRED_MESSAGE);
   scheduleAutoRefresh();
-  showStatus("已清除当前会话令牌", "info");
+  showStatus("已清除当前浏览器中的访问令牌", "info");
 }
 
 function wireEvents() {
   dom.refreshButton.addEventListener("click", () =>
-    refreshVisibleView({ forceResourceRefresh: true }).catch((error) => showStatus(error.message, "error"))
+    refreshVisibleView({ forceResourceRefresh: true }).catch((error) =>
+      showStatus(error.message, "error")
+    )
   );
   dom.logsRefreshButton.addEventListener("click", () =>
     loadLogsSection({ reset: true }).catch((error) => showStatus(error.message, "error"))
@@ -286,21 +264,19 @@ function wireEvents() {
   });
   dom.viewTabs.forEach((button) => {
     button.addEventListener("click", () => {
-      handleTopLevelViewChange(button.dataset.view).catch((error) => showStatus(error.message, "error"));
-    });
-  });
-  dom.dashboardPanelTabs.forEach((button) => {
-    button.addEventListener("click", () => {
-      handleDashboardPanelChange(button.dataset.panel).catch((error) => showStatus(error.message, "error"));
+      handleTopLevelViewChange(button.dataset.view).catch((error) =>
+        showStatus(error.message, "error")
+      );
     });
   });
   window.addEventListener("hashchange", () => {
-    handleTopLevelViewChange(getViewFromHash()).catch((error) => showStatus(error.message, "error"));
+    handleTopLevelViewChange(getViewFromHash()).catch((error) =>
+      showStatus(error.message, "error")
+    );
   });
 }
 
 async function boot() {
-  setDashboardPanel(state.activeDashboardPanel);
   setLogLevel(state.logLevel);
   setView(getViewFromHash());
   resetServerForm();
@@ -309,7 +285,10 @@ async function boot() {
     await loadHealth();
     await loadAgent();
     if (!state.authEnabled || getToken()) {
-      await refreshVisibleView({ forceLogsReset: true });
+      await refreshVisibleView({
+        forceLogsReset: state.activeView === "logs",
+        forceFilesReload: state.activeView === "files",
+      });
     } else {
       clearProtectedViews("输入访问令牌后即可读取节点信息");
     }
@@ -321,6 +300,5 @@ async function boot() {
   }
 }
 
-ensureConfigResetTokenButton();
 wireEvents();
 boot();

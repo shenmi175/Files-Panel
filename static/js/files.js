@@ -2,6 +2,8 @@ import {
   dom,
   escapeHtml,
   fileTypeGlyph,
+  fileTypeLabel,
+  formatBytes,
   formatTimestamp,
   getToken,
   joinPath,
@@ -74,6 +76,37 @@ function renderBreadcrumbs(currentPath, rootPath) {
   });
 }
 
+function renderFileRow(entry) {
+  const selected = state.selectedEntry?.path === entry.path ? "selected" : "";
+  return `
+    <div
+      class="file-row ${selected}"
+      data-path="${escapeHtml(entry.path)}"
+      data-type="${escapeHtml(entry.file_type)}"
+      data-name="${escapeHtml(entry.name)}"
+    >
+      <div class="file-cell file-cell-name">
+        <button
+          type="button"
+          class="entry-link ${entry.file_type === "directory" ? "is-directory" : ""}"
+        >
+          <span class="entry-glyph">${fileTypeGlyph(entry.file_type)}</span>
+          <span class="entry-copy">
+            <strong>${escapeHtml(entry.name)}</strong>
+            <small>${escapeHtml(entry.path)}</small>
+          </span>
+        </button>
+      </div>
+      <div class="file-cell file-cell-meta">
+        <span class="entry-tag">${escapeHtml(fileTypeLabel(entry.file_type))}</span>
+        <span class="entry-tag">${escapeHtml(entry.mode)}</span>
+      </div>
+      <div class="file-cell file-cell-size">${escapeHtml(formatBytes(entry.size))}</div>
+      <div class="file-cell file-cell-time">${escapeHtml(formatTimestamp(entry.modified_epoch))}</div>
+    </div>
+  `;
+}
+
 export function renderFiles(payload) {
   state.currentPath = payload.current_path;
   state.parentPath = payload.parent_path;
@@ -94,28 +127,7 @@ export function renderFiles(payload) {
   }
 
   dom.filesEl.className = "file-list";
-  dom.filesEl.innerHTML = payload.entries
-    .map((entry) => {
-      const selected = state.selectedEntry?.path === entry.path ? "selected" : "";
-      return `
-        <div class="file-row ${selected}" data-path="${escapeHtml(entry.path)}" data-type="${escapeHtml(entry.file_type)}" data-name="${escapeHtml(entry.name)}">
-          <div class="file-main">
-            <button
-              type="button"
-              class="entry-link ${entry.file_type === "directory" ? "is-directory" : ""}"
-            >
-              <span class="entry-glyph">${fileTypeGlyph(entry.file_type)}</span>
-              <strong>${escapeHtml(entry.name)}</strong>
-              <span class="entry-meta">
-                <span>${escapeHtml(entry.mode)}</span>
-                <span>${escapeHtml(formatTimestamp(entry.modified_epoch))}</span>
-              </span>
-            </button>
-          </div>
-        </div>
-      `;
-    })
-    .join("");
+  dom.filesEl.innerHTML = payload.entries.map(renderFileRow).join("");
 
   const highlightSelection = () => {
     dom.filesEl.querySelectorAll(".file-row").forEach((row) => {

@@ -126,7 +126,7 @@ export function renderAccess(payload) {
     metricCard({
       label: "对外入口",
       value: publicEntry,
-      note: payload.token_configured ? "Bearer Token 已配置" : "未配置访问令牌",
+      note: payload.token_configured ? "访问令牌已配置" : "未配置访问令牌",
       tone: "tone-amber",
     }),
     metricCard({
@@ -176,8 +176,8 @@ export function renderConfig(config) {
       tone: "tone-amber",
     }),
     metricCard({
-      label: "令牌 / 存储",
-      value: config.token_configured ? "Bearer Token 已配置" : "未配置 Token",
+      label: "访问令牌 / 存储",
+      value: config.token_configured ? "访问令牌已配置" : "未配置令牌",
       note: `采样 ${sampleInterval} 秒，数据库 ${databasePath}`,
       tone: "tone-olive",
     }),
@@ -198,7 +198,7 @@ function serverBadges(server) {
 
 function serverActions(server) {
   if (server.is_local) {
-    return `<span class="ghost-chip">自动维护</span>`;
+    return `<span class="ghost-chip">当前节点</span>`;
   }
   return `
     <button type="button" class="secondary server-action" data-action="edit" data-id="${server.id}">
@@ -231,7 +231,8 @@ function fillServerForm(server) {
 export function renderServers(payload) {
   state.servers = payload.items || [];
   const enabledCount = state.servers.filter((item) => item.enabled).length;
-  dom.serversSummaryEl.textContent = `已登记 ${state.servers.length} 个节点，其中 ${enabledCount} 个启用。`;
+  dom.serversSummaryEl.textContent =
+    `已登记 ${state.servers.length} 个节点，其中 ${enabledCount} 个启用。当前仅维护节点目录。`;
 
   if (!state.servers.length) {
     setServersPlaceholder("当前还没有登记节点");

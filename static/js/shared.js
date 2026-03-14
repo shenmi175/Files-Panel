@@ -1,4 +1,11 @@
 export const TOKEN_STORAGE_KEY = "files_agent_token";
+const VIEW_HASHES = {
+  overview: "#overview",
+  files: "#files",
+  access: "#access",
+  nodes: "#nodes",
+  logs: "#logs",
+};
 let statusClearHandle = 0;
 
 export const state = {
@@ -11,8 +18,7 @@ export const state = {
   parentPath: null,
   showHidden: false,
   resourceSampleInterval: 15,
-  activeView: "dashboard",
-  activeDashboardPanel: "resources",
+  activeView: "overview",
   filesLoaded: false,
   docker: null,
   logsLoaded: false,
@@ -76,12 +82,11 @@ export const dom = {
   renameButton: document.getElementById("rename-button"),
   deleteButton: document.getElementById("delete-button"),
   downloadButton: document.getElementById("download-button"),
-  dashboardView: document.getElementById("dashboard-view"),
-  settingsView: document.getElementById("settings-view"),
+  overviewView: document.getElementById("overview-view"),
+  filesView: document.getElementById("files-view"),
+  accessView: document.getElementById("access-view"),
+  nodesView: document.getElementById("nodes-view"),
   logsView: document.getElementById("logs-view"),
-  resourcePanel: document.getElementById("resource-panel"),
-  filesPanel: document.getElementById("files-panel"),
-  dashboardPanelTabs: document.querySelectorAll(".dashboard-panel-tab"),
   logsRefreshButton: document.getElementById("refresh-logs"),
   logsServiceEl: document.getElementById("logs-service"),
   logsSummaryEl: document.getElementById("logs-summary"),
@@ -90,6 +95,10 @@ export const dom = {
   logLevelTabs: document.querySelectorAll(".log-level-tab"),
   viewTabs: document.querySelectorAll(".view-tab"),
 };
+
+function normalizeView(value) {
+  return Object.prototype.hasOwnProperty.call(VIEW_HASHES, value) ? value : "overview";
+}
 
 export function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => {
@@ -297,37 +306,24 @@ export function fileTypeGlyph(type) {
 }
 
 export function getViewFromHash() {
-  if (window.location.hash === "#settings") {
-    return "settings";
-  }
-  if (window.location.hash === "#logs") {
-    return "logs";
-  }
-  return "dashboard";
+  return normalizeView(window.location.hash.replace(/^#/, ""));
 }
 
 export function setView(view) {
-  state.activeView = view;
-  dom.dashboardView.classList.toggle("hidden", view !== "dashboard");
-  dom.settingsView.classList.toggle("hidden", view !== "settings");
-  dom.logsView.classList.toggle("hidden", view !== "logs");
+  const normalizedView = normalizeView(view);
+  state.activeView = normalizedView;
+  dom.overviewView.classList.toggle("hidden", normalizedView !== "overview");
+  dom.filesView.classList.toggle("hidden", normalizedView !== "files");
+  dom.accessView.classList.toggle("hidden", normalizedView !== "access");
+  dom.nodesView.classList.toggle("hidden", normalizedView !== "nodes");
+  dom.logsView.classList.toggle("hidden", normalizedView !== "logs");
   dom.viewTabs.forEach((button) => {
-    button.classList.toggle("is-active", button.dataset.view === view);
+    button.classList.toggle("is-active", button.dataset.view === normalizedView);
   });
-  const nextHash =
-    view === "settings" ? "#settings" : view === "logs" ? "#logs" : "#dashboard";
+  const nextHash = VIEW_HASHES[normalizedView];
   if (window.location.hash !== nextHash) {
     window.history.replaceState(null, "", nextHash);
   }
-}
-
-export function setDashboardPanel(panel) {
-  state.activeDashboardPanel = panel;
-  dom.resourcePanel.classList.toggle("hidden", panel !== "resources");
-  dom.filesPanel.classList.toggle("hidden", panel !== "files");
-  dom.dashboardPanelTabs.forEach((button) => {
-    button.classList.toggle("is-active", button.dataset.panel === panel);
-  });
 }
 
 export function updateHeroAccess() {
@@ -335,8 +331,8 @@ export function updateHeroAccess() {
     dom.agentEntryEl.textContent = state.authEnabled && !getToken() ? "等待令牌" : "等待接入状态";
     dom.agentAuthEl.textContent = state.authEnabled
       ? getToken()
-        ? "Bearer Token 已启用"
-        : "需要 Bearer Token"
+        ? "访问令牌已启用"
+        : "需要访问令牌"
       : "未启用访问令牌";
     return;
   }
@@ -353,8 +349,8 @@ export function updateHeroAccess() {
     dom.agentEntryEl.textContent = `IP:${state.access.desired_bind_port}`;
     dom.agentAuthEl.textContent = state.authEnabled
       ? getToken()
-        ? "临时 IP 入口 + Bearer Token"
-        : "临时 IP 入口，需要 Bearer Token"
+        ? "允许通过 IP 访问，令牌已启用"
+        : "允许通过 IP 访问，需要访问令牌"
       : "当前允许通过 IP:端口 访问";
     return;
   }
@@ -362,8 +358,8 @@ export function updateHeroAccess() {
   dom.agentEntryEl.textContent = "仅本地监听";
   dom.agentAuthEl.textContent = state.authEnabled
     ? getToken()
-      ? "仅本地访问，Bearer Token 已启用"
-      : "仅本地访问，需要 Bearer Token"
+      ? "仅本地访问，令牌已启用"
+      : "仅本地访问，需要访问令牌"
     : "仅本地访问";
 }
 
