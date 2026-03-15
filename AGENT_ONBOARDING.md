@@ -23,6 +23,17 @@ On the manager host:
 - configure and start `wg0`
 - make sure the manager WireGuard endpoint is reachable from the target host
 
+Manager `wg0` example:
+
+```ini
+[Interface]
+Address = 10.66.0.1/24
+ListenPort = 51820
+PrivateKey = <manager-private-key>
+```
+
+A reusable template is in [wireguard/manager-wg0.example.conf](wireguard/manager-wg0.example.conf).
+
 ## 2. Install the Target Host
 
 On the target host:

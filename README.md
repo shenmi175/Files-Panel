@@ -163,6 +163,7 @@ sudo file-panel setup-agent
 5. After it prints the target `WireGuard IP` and `AGENT_TOKEN`, go back to the manager UI and add the node manually.
 
 See [AGENT_ONBOARDING.md](AGENT_ONBOARDING.md) for the full step-by-step guide.
+The manager `wg0` template is in [wireguard/manager-wg0.example.conf](wireguard/manager-wg0.example.conf).
 
 ## Advanced WireGuard Bootstrap Flow
 
