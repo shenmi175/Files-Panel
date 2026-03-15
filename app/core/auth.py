@@ -175,7 +175,7 @@ def require_auth(
     authorization: str | None = Header(default=None),
     session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
 ) -> None:
-    if is_request_authenticated(authorization, session_cookie):
+    if is_request_authenticated(authorization, session_cookie, allow_agent_token=True):
         return
 
     raise HTTPException(

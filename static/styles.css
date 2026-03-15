@@ -1178,6 +1178,11 @@ h3 {
   background: rgba(255, 255, 255, 0.8);
 }
 
+.server-row.is-selected {
+  border-color: rgba(29, 92, 77, 0.35);
+  box-shadow: 0 14px 28px rgba(29, 92, 77, 0.08);
+}
+
 .server-main {
   min-width: 0;
   display: grid;
@@ -1217,6 +1222,12 @@ h3 {
   gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.server-action.is-current {
+  background: var(--ink);
+  color: #fff;
+  border-color: var(--ink);
 }
 
 .footnote {

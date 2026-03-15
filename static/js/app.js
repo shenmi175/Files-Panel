@@ -34,7 +34,7 @@ import {
   saveServer,
 } from "./settings.js";
 
-const AUTH_REQUIRED_MESSAGE = "请先登录后再访问控制面板。";
+const AUTH_REQUIRED_MESSAGE = "请先登录后再访问面板内容。";
 let autoRefreshHandle = 0;
 
 function canAccessProtectedViews() {
@@ -72,12 +72,12 @@ function setLoginMessage(message, type = "info") {
 
 function renderLoginMode() {
   const isRegistration = state.registrationRequired;
-  dom.loginTitleEl.textContent = isRegistration ? "首次注册管理员账号" : "管理员登录";
+  dom.loginTitleEl.textContent = isRegistration ? "注册管理员账号" : "登录管理平台";
   dom.loginSubtitleEl.textContent = isRegistration
-    ? "当前节点尚未注册本地管理员账号，请先创建一个管理员账号并进入控制面板。"
-    : "使用本地管理员账号密码登录控制面板。浏览器只保存 HttpOnly 会话，不再保存访问令牌。";
+    ? "首次使用需要创建一个本地管理员账号；浏览器登录使用账号密码，不再直接暴露节点令牌。"
+    : "请输入管理员账号密码登录；会话通过 HttpOnly Cookie 保存，关闭会话后需要重新登录。";
   dom.loginConfirmFieldEl.classList.toggle("hidden", !isRegistration);
-  dom.loginSubmitLabelEl.textContent = isRegistration ? "注册并进入" : "登录";
+  dom.loginSubmitLabelEl.textContent = isRegistration ? "创建账号" : "登录";
   dom.loginPasswordInput.autocomplete = isRegistration ? "new-password" : "current-password";
   if (!isRegistration) {
     dom.loginConfirmInput.value = "";
@@ -85,7 +85,7 @@ function renderLoginMode() {
 }
 
 function resetAgentSummary() {
-  dom.agentNameEl.textContent = "未加载";
+  dom.agentNameEl.textContent = "等待加载";
   dom.agentHostnameEl.textContent = "-";
   dom.agentUserEl.textContent = "-";
   updateHeroAccess();
@@ -110,6 +110,24 @@ function resetProtectedState() {
   resetAgentSummary();
 }
 
+function resetSelectedNodeData() {
+  state.agent = null;
+  state.access = null;
+  state.config = null;
+  state.docker = null;
+  state.resourcesLoaded = false;
+  state.filesLoaded = false;
+  state.accessLoaded = false;
+  state.configLoaded = false;
+  state.logsLoaded = false;
+  state.logsCursor = null;
+  state.logLines = [];
+  state.preloadStarted = false;
+  state.selectedEntry = null;
+  state.currentPath = "/";
+  state.parentPath = null;
+}
+
 function showLoginView(message = "") {
   dom.appShell.classList.add("hidden");
   dom.loginView.classList.remove("hidden");
@@ -118,7 +136,7 @@ function showLoginView(message = "") {
   clearProtectedViews(AUTH_REQUIRED_MESSAGE);
   renderLoginMode();
   setLoginMessage(
-    message || (state.registrationRequired ? "请先注册一个本地管理员账号。" : "请输入账号密码登录。")
+    message || (state.registrationRequired ? "请先注册管理员账号。" : "请输入账号密码后登录。")
   );
   window.setTimeout(() => {
     dom.loginUsernameInput?.focus();
@@ -173,6 +191,7 @@ async function loadSession() {
 async function loadAgent() {
   const agent = await request("/api/agent");
   state.agent = agent;
+  state.selectedServerName = agent.agent_name;
   state.currentPath = agent.root_path;
   state.parentPath = null;
   dom.activePathLabel.textContent = agent.root_path;
@@ -319,6 +338,31 @@ async function enterAuthenticatedApp({
   startBackgroundPreload();
 }
 
+async function switchServerSelection(serverId, serverName = null) {
+  const normalizedServerId = Number.isInteger(serverId) ? serverId : null;
+  if (state.selectedServerId === normalizedServerId && state.selectedServerName === serverName) {
+    return;
+  }
+
+  state.selectedServerId = normalizedServerId;
+  state.selectedServerName = serverName;
+
+  if (!canAccessProtectedViews()) {
+    return;
+  }
+
+  resetSelectedNodeData();
+  resetLogsState("正在切换节点...");
+  clearProtectedViews("正在切换节点...");
+  showStatus(`正在切换到 ${serverName || "本机节点"}...`, "info", { autoClearMs: 3000 });
+  await enterAuthenticatedApp({
+    forceResourceRefresh: true,
+    forceLogsReset: true,
+    forceFilesReload: true,
+  });
+  showStatus(`已切换到 ${state.selectedServerName || "本机节点"}`, "success", { autoClearMs: 4000 });
+}
+
 function handleUnauthenticatedState(message) {
   state.isAuthenticated = false;
   state.sessionUsername = null;
@@ -334,11 +378,11 @@ async function submitAuth(event) {
   const confirmPassword = dom.loginConfirmInput.value;
 
   if (!username) {
-    setLoginMessage("请输入管理员账号。", "error");
+    setLoginMessage("请输入用户名。", "error");
     return;
   }
   if (!password) {
-    setLoginMessage("请输入登录密码。", "error");
+    setLoginMessage("请输入密码。", "error");
     return;
   }
   if (state.registrationRequired && password !== confirmPassword) {
@@ -473,8 +517,15 @@ function wireEvents() {
     );
   });
   window.addEventListener("auth:expired", (event) => {
-    const message = event.detail?.message || "登录已失效，请重新输入账号密码。";
+    const message = event.detail?.message || "登录会话已失效，请重新登录。";
     handleUnauthenticatedState(message);
+  });
+  window.addEventListener("server:selected", (event) => {
+    const nextServerId = event.detail?.serverId;
+    const nextServerName = event.detail?.serverName || null;
+    switchServerSelection(nextServerId, nextServerName).catch((error) =>
+      showStatus(error.message, "error")
+    );
   });
 }
 
@@ -498,8 +549,8 @@ async function boot() {
     } else {
       showLoginView(
         state.registrationRequired
-          ? "请先注册一个本地管理员账号。"
-          : "请输入账号密码后登录控制面板。"
+          ? "请先注册管理员账号。"
+          : "请输入账号密码后登录。"
       );
     }
   } catch (error) {
@@ -507,7 +558,7 @@ async function boot() {
       showLoginView(error.message);
     } else {
       showAppShell();
-      clearProtectedViews("初始化控制面板失败。");
+      clearProtectedViews("应用初始化失败。");
       showStatus(error.message, "error");
     }
   } finally {

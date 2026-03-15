@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Cookie, Depends, File, Header, HTTPException, Query, Request, UploadFile
+from pathlib import Path
+from urllib.parse import urlencode
+
+from fastapi import APIRouter, Cookie, Depends, File, Header, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import FileResponse
 
 from app.core.auth import SESSION_COOKIE_NAME, is_request_authenticated, require_auth
@@ -12,6 +15,7 @@ from app.models import (
     RenameFileRequest,
 )
 from app.services import files as file_service
+from app.services.remote_nodes import remote_download_request, remote_json_request, remote_upload_request
 
 
 router = APIRouter(prefix="/api/files", tags=["files"])
@@ -21,22 +25,73 @@ router = APIRouter(prefix="/api/files", tags=["files"])
 def list_files(
     path: str | None = Query(default=None),
     show_hidden: bool = Query(default=False),
+    server_id: int | None = Query(default=None),
 ) -> FileListResponse:
+    if server_id is not None:
+        params: dict[str, object] = {}
+        if path is not None:
+            params["path"] = path
+        if show_hidden:
+            params["show_hidden"] = "true"
+        return FileListResponse.model_validate(
+            remote_json_request(
+                server_id,
+                method="GET",
+                path="/api/files",
+                params=params or None,
+            )
+        )
     return file_service.build_file_list(path, show_hidden)
 
 
 @router.post("/mkdir", response_model=MessageResponse, dependencies=[Depends(require_auth)])
-def create_directory(request: CreateDirectoryRequest) -> MessageResponse:
+def create_directory(
+    request: CreateDirectoryRequest,
+    server_id: int | None = Query(default=None),
+) -> MessageResponse:
+    if server_id is not None:
+        return MessageResponse.model_validate(
+            remote_json_request(
+                server_id,
+                method="POST",
+                path="/api/files/mkdir",
+                json_body=request.model_dump(),
+            )
+        )
     return file_service.create_directory(request)
 
 
 @router.delete("", response_model=MessageResponse, dependencies=[Depends(require_auth)])
-def delete_path(path: str = Query(...)) -> MessageResponse:
+def delete_path(
+    path: str = Query(...),
+    server_id: int | None = Query(default=None),
+) -> MessageResponse:
+    if server_id is not None:
+        return MessageResponse.model_validate(
+            remote_json_request(
+                server_id,
+                method="DELETE",
+                path="/api/files",
+                params={"path": path},
+            )
+        )
     return file_service.delete_path(path)
 
 
 @router.post("/rename", response_model=MessageResponse, dependencies=[Depends(require_auth)])
-def rename_path(request: RenameFileRequest) -> MessageResponse:
+def rename_path(
+    request: RenameFileRequest,
+    server_id: int | None = Query(default=None),
+) -> MessageResponse:
+    if server_id is not None:
+        return MessageResponse.model_validate(
+            remote_json_request(
+                server_id,
+                method="POST",
+                path="/api/files/rename",
+                json_body=request.model_dump(),
+            )
+        )
     return file_service.rename_path(request)
 
 
@@ -44,7 +99,12 @@ def rename_path(request: RenameFileRequest) -> MessageResponse:
 def upload_file(
     file: UploadFile = File(...),
     path: str | None = Query(default=None),
+    server_id: int | None = Query(default=None),
 ) -> MessageResponse:
+    if server_id is not None:
+        return MessageResponse.model_validate(
+            remote_upload_request(server_id, path=path, file=file)
+        )
     return file_service.upload_file(file, path)
 
 
@@ -52,20 +112,36 @@ def upload_file(
 def download_link(
     request: Request,
     path: str = Query(...),
+    server_id: int | None = Query(default=None),
 ) -> DownloadLinkResponse:
+    if server_id is not None:
+        params = {"path": path, "server_id": server_id}
+        download_url = f"{request.url_for('download_file')}?{urlencode(params)}"
+        return DownloadLinkResponse(url=download_url, expires_in_seconds=0)
     return file_service.build_download_link(path, request)
 
 
 @router.get("/download")
 def download_file(
     path: str = Query(...),
+    server_id: int | None = Query(default=None),
     download_token: str | None = Query(default=None),
     authorization: str | None = Header(default=None),
     session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
-) -> FileResponse:
+) -> FileResponse | Response:
+    if server_id is not None:
+        if not is_request_authenticated(authorization, session_cookie, allow_agent_token=True):
+            raise HTTPException(status_code=403, detail="download authorization required")
+        payload = remote_download_request(server_id, path=path)
+        filename = (payload.filename or Path(path).name or "download.bin").replace('"', "")
+        return Response(
+            content=payload.content,
+            media_type=payload.media_type,
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
     target = file_service.resolve_existing_file(path)
     if not (
-        is_request_authenticated(authorization, session_cookie)
+        is_request_authenticated(authorization, session_cookie, allow_agent_token=True)
         or file_service.validate_download_token(target, download_token)
     ):
         raise HTTPException(status_code=403, detail="download authorization required")

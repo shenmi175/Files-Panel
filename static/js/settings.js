@@ -64,8 +64,8 @@ function scheduleRestartStatusResolution({ tokenWillChange = false } = {}) {
     if (!recovered) {
       showStatus(
         tokenWillChange
-          ? "服务正在应用新令牌，请稍后刷新并重新登录。"
-          : "服务重启时间超过预期，请稍后刷新确认配置是否生效。",
+          ? "服务仍在重启，新的节点令牌可能尚未生效，请稍后刷新页面。"
+          : "服务仍在重启，请稍后刷新页面确认配置是否生效。",
         "info",
         { autoClearMs: 10000 }
       );
@@ -73,7 +73,7 @@ function scheduleRestartStatusResolution({ tokenWillChange = false } = {}) {
     }
 
     if (tokenWillChange) {
-      showStatus("服务已恢复，请使用新令牌重新登录。", "info", { autoClearMs: 10000 });
+      showStatus("服务已恢复，新的节点令牌已生效，页面即将刷新。", "info", { autoClearMs: 10000 });
       window.setTimeout(() => {
         window.location.reload();
       }, 1200);
@@ -84,7 +84,7 @@ function scheduleRestartStatusResolution({ tokenWillChange = false } = {}) {
       await refreshSettings();
       showStatus("运行配置已生效。", "success", { autoClearMs: 6000 });
     } catch {
-      showStatus("服务已恢复，请刷新页面确认最新状态。", "info", { autoClearMs: 8000 });
+      showStatus("服务已经恢复，请手动刷新页面确认最新状态。", "info", { autoClearMs: 8000 });
     }
   })();
 }
@@ -96,23 +96,23 @@ export function renderAccess(payload) {
 
   if (payload.public_url) {
     dom.accessSummaryEl.textContent = payload.restart_pending
-      ? `域名已接入：${payload.public_url}，等待服务切回本地监听`
+      ? `域名已接入：${payload.public_url}，等待服务重启切换到本地监听。`
       : `域名已接入：${payload.public_url}`;
   } else if (payload.public_ip_access_enabled) {
-    dom.accessSummaryEl.textContent = `当前允许通过 IP:${payload.desired_bind_port} 临时访问`;
+    dom.accessSummaryEl.textContent = `当前允许通过 IP:${payload.desired_bind_port} 直接访问。`;
   } else {
-    dom.accessSummaryEl.textContent = "当前仅允许通过登录会话访问节点。";
+    dom.accessSummaryEl.textContent = "当前仅允许通过受控入口访问，未开放 IP 直连。";
   }
 
   const publicEntry = payload.public_url
     ? payload.public_url
     : payload.public_ip_access_enabled
       ? `http://服务器IP:${payload.desired_bind_port}`
-      : "等待接入状态";
+      : "等待接入";
   const nginxStatus = payload.nginx_available
     ? payload.nginx_running
       ? "已运行"
-      : "已安装，等待 reload"
+      : "可用但未运行"
     : "未安装";
 
   dom.accessCardsEl.className = "metric-grid";
@@ -120,19 +120,19 @@ export function renderAccess(payload) {
     metricCard({
       label: "当前监听",
       value: `${payload.current_bind_host}:${payload.current_bind_port}`,
-      note: payload.restart_pending ? "重启后会切到新的监听地址" : "当前生效",
+      note: payload.restart_pending ? "重启后会切换到新的监听地址" : "当前生效",
       tone: "tone-accent",
     }),
     metricCard({
       label: "目标监听",
       value: `${payload.desired_bind_host}:${payload.desired_bind_port}`,
-      note: payload.public_ip_access_enabled ? "仍允许通过 IP 入口访问" : "域名完成后仅保留本地监听",
+      note: payload.public_ip_access_enabled ? "仍允许通过 IP:端口 访问" : "域名完成后仅保留本地监听",
       tone: "tone-green",
     }),
     metricCard({
       label: "对外入口",
       value: publicEntry,
-      note: payload.token_configured ? "访问令牌已配置" : "尚未配置访问令牌",
+      note: payload.token_configured ? "节点令牌已配置" : "尚未配置节点令牌",
       tone: "tone-amber",
     }),
     metricCard({
@@ -141,8 +141,8 @@ export function renderAccess(payload) {
       note: payload.https_enabled
         ? "HTTPS 已就绪"
         : payload.certbot_available
-          ? "证书会在域名接入时申请"
-          : "未检测到 certbot",
+          ? "可用于申请和续期证书"
+          : "未安装 certbot",
       tone: "tone-olive",
     }),
   ].join("");
@@ -163,7 +163,7 @@ export function renderConfig(config) {
   dom.configAllowRestartInput.checked = config.allow_self_restart;
   state.resourceSampleInterval = sampleInterval;
 
-  const databasePath = config.database_path || "未提供";
+  const databasePath = config.database_path || "未检测到";
   dom.configSummaryEl.className = "metric-grid";
   dom.configSummaryEl.innerHTML = [
     metricCard({
@@ -186,7 +186,7 @@ export function renderConfig(config) {
     }),
     metricCard({
       label: "令牌 / 存储",
-      value: config.token_configured ? "访问令牌已配置" : "尚未配置访问令牌",
+      value: config.token_configured ? "Agent Token 已配置" : "尚未配置 Agent Token",
       note: `采样 ${sampleInterval} 秒，数据库 ${databasePath}`,
       tone: "tone-olive",
     }),
@@ -203,11 +203,28 @@ function serverBadges(server) {
   return badges.map((badge) => `<span class="server-chip">${escapeHtml(badge)}</span>`).join("");
 }
 
-function serverActions(server) {
+function isSelectedServer(server) {
   if (server.is_local) {
-    return `<span class="ghost-chip">当前节点</span>`;
+    return state.selectedServerId === null;
+  }
+  return state.selectedServerId === server.id;
+}
+
+function serverActions(server) {
+  const selected = isSelectedServer(server);
+  const selectLabel = selected ? "当前查看" : "切换查看";
+
+  if (server.is_local) {
+    return `
+      <button type="button" class="secondary server-action ${selected ? "is-current" : ""}" data-action="select" data-id="${server.id}">
+        ${selectLabel}
+      </button>
+    `;
   }
   return `
+    <button type="button" class="secondary server-action ${selected ? "is-current" : ""}" data-action="select" data-id="${server.id}">
+      ${selectLabel}
+    </button>
     <button type="button" class="secondary server-action" data-action="edit" data-id="${server.id}">
       编辑
     </button>
@@ -238,11 +255,22 @@ function fillServerForm(server) {
 export function renderServers(payload) {
   state.servers = payload.items || [];
   state.serversLoaded = true;
+
+  const selectedServer = state.selectedServerId === null
+    ? state.servers.find((item) => item.is_local)
+    : state.servers.find((item) => item.id === state.selectedServerId && item.enabled);
+  if (!selectedServer) {
+    state.selectedServerId = null;
+    state.selectedServerName = null;
+  } else {
+    state.selectedServerName = selectedServer.name;
+  }
+
   const enabledCount = state.servers.filter((item) => item.enabled).length;
-  dom.serversSummaryEl.textContent = `已登记 ${state.servers.length} 个节点，其中 ${enabledCount} 个已启用。`;
+  dom.serversSummaryEl.textContent = `已登记 ${state.servers.length} 个节点，启用 ${enabledCount} 个；当前查看 ${state.selectedServerName || "本机节点"}`;
 
   if (!state.servers.length) {
-    setServersPlaceholder("当前还没有登记任何节点。");
+    setServersPlaceholder("暂未登记任何节点");
     return;
   }
 
@@ -250,17 +278,17 @@ export function renderServers(payload) {
   dom.serversListEl.innerHTML = state.servers
     .map(
       (server) => `
-        <div class="server-row">
+        <div class="server-row ${isSelectedServer(server) ? "is-selected" : ""}">
           <div class="server-main">
             <div class="server-title-row">
               <strong>${escapeHtml(server.name)}</strong>
               <div class="server-chip-row">${serverBadges(server)}</div>
             </div>
-            <small>${escapeHtml(server.base_url || "尚未配置节点 URL")}</small>
+            <small>${escapeHtml(server.base_url || "未配置节点 URL")}</small>
             <small>${
               server.last_seen_at
-                ? `最后同步：${escapeHtml(new Date(server.last_seen_at).toLocaleString("zh-CN", { hour12: false }))}`
-                : "尚未记录最近同步时间"
+                ? `最近连通 ${escapeHtml(new Date(server.last_seen_at).toLocaleString("zh-CN", { hour12: false }))}`
+                : "尚未成功连接过该节点"
             }</small>
           </div>
           <div class="server-actions">
@@ -311,7 +339,7 @@ export async function configureDomain(event) {
   event.preventDefault();
   const domain = dom.domainInput.value.trim();
   if (!domain) {
-    showStatus("请输入域名。", "error");
+    showStatus("请填写域名。", "error");
     return;
   }
 
@@ -324,14 +352,14 @@ export async function configureDomain(event) {
     dom.domainInput.value = "";
     showStatus(
       payload.restart_scheduled
-        ? `域名已接入：${payload.public_url}，服务正在切回本地监听`
+        ? `域名已接入：${payload.public_url}，服务正在重启应用新入口。`
         : `域名已接入：${payload.public_url}`,
       "success"
     );
     await refreshSettings().catch(() => {});
   } catch (error) {
     if (isLikelyRestartInterruption(error)) {
-      showStatus("域名接入已提交，服务可能正在重载，请稍后刷新确认。", "info");
+      showStatus("服务正在重启切换域名入口，请稍后刷新确认。", "info");
       return;
     }
     showStatus(error.message, "error");
@@ -349,7 +377,7 @@ export async function saveConfig(event) {
     return;
   }
   if (!RESOURCE_SAMPLE_INTERVAL_OPTIONS.includes(nextSampleInterval)) {
-    showStatus("资源采样间隔仅支持 5 秒、10 秒或 15 秒。", "error");
+    showStatus("采样间隔只能是 5、10、15 秒。", "error");
     return;
   }
 
@@ -375,7 +403,7 @@ export async function saveConfig(event) {
     if (payload.restart_scheduled) {
       showStatus(
         tokenWillChange
-          ? "运行配置已保存，服务正在重启。重启后请使用新令牌重新登录。"
+          ? "运行配置已保存，服务正在重启并应用新的节点令牌。"
           : "运行配置已保存，服务正在重启应用新参数。",
         "info"
       );
@@ -386,8 +414,8 @@ export async function saveConfig(event) {
     if (payload.restart_required) {
       showStatus(
         tokenWillChange
-          ? "配置已保存。请重启服务后使用新令牌重新登录。"
-          : "配置已保存，重启服务后生效。",
+          ? "配置已保存；需要手动重启服务后，新节点令牌才会生效。"
+          : "配置已保存；需要手动重启服务后，新参数才会生效。",
         "info",
         { autoClearMs: 8000 }
       );
@@ -420,11 +448,11 @@ async function copyTokenToClipboard(token) {
 }
 
 function revealToken(token) {
-  window.prompt("新 AGENT_TOKEN 已生成，请立即保存。", token);
+  window.prompt("新的 AGENT_TOKEN 已生成，请妥善保存：", token);
 }
 
 export async function resetAgentToken() {
-  if (!window.confirm("确认重置当前访问令牌吗？旧令牌会在服务重启后失效。")) {
+  if (!window.confirm("确认重置当前节点的 AGENT_TOKEN 吗？")) {
     return;
   }
 
@@ -440,8 +468,8 @@ export async function resetAgentToken() {
     if (payload.restart_scheduled) {
       showStatus(
         copied
-          ? "新令牌已复制。服务重启后当前会话会失效，请使用新令牌重新登录。"
-          : "新令牌已生成。服务重启后当前会话会失效，请保存新令牌并重新登录。",
+          ? "新的 AGENT_TOKEN 已复制，服务正在重启应用。"
+          : "新的 AGENT_TOKEN 已生成，服务正在重启应用。",
         "info"
       );
       window.setTimeout(() => {
@@ -451,7 +479,7 @@ export async function resetAgentToken() {
     }
 
     revealToken(payload.token);
-    showStatus("新令牌已生成。请保存它，并在重启服务后回到登录页重新登录。", "info");
+    showStatus("新的 AGENT_TOKEN 已生成，重启服务后生效。", "info");
   } catch (error) {
     showStatus(error.message, "error");
   }
@@ -469,7 +497,7 @@ export async function saveServer(event) {
   };
 
   if (!payload.name) {
-    showStatus("请输入节点名称。", "error");
+    showStatus("请填写节点名称。", "error");
     return;
   }
 
@@ -501,7 +529,14 @@ export async function deleteServer(serverId) {
     await request(`/api/servers/${server.id}`, { method: "DELETE" });
     resetServerForm();
     await loadServers();
-    showStatus(`已删除节点 ${server.name}。`, "success");
+    if (state.selectedServerId === server.id) {
+      window.dispatchEvent(
+        new CustomEvent("server:selected", {
+          detail: { serverId: null, serverName: null },
+        })
+      );
+    }
+    showStatus(`节点 ${server.name} 已删除。`, "success");
   } catch (error) {
     showStatus(error.message, "error");
   }
@@ -521,6 +556,18 @@ export function handleServersClick(event) {
 
   if (button.dataset.action === "edit") {
     fillServerForm(server);
+    return;
+  }
+
+  if (button.dataset.action === "select") {
+    window.dispatchEvent(
+      new CustomEvent("server:selected", {
+        detail: {
+          serverId: server.is_local ? null : server.id,
+          serverName: server.name,
+        },
+      })
+    );
     return;
   }
 

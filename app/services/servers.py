@@ -5,8 +5,18 @@ from urllib.parse import urlparse
 from fastapi import HTTPException
 
 from app.core.settings import SETTINGS
-from app.core.storage import create_server, delete_server, list_servers, load_access_state, update_server, upsert_local_server
+from app.core.storage import (
+    create_server,
+    delete_server,
+    list_servers,
+    load_access_state,
+    touch_server_last_seen,
+    update_server,
+    upsert_local_server,
+)
 from app.models import ServerListResponse, ServerMutationResponse, ServerRecord, ServerUpsertRequest
+from app.services.remote_nodes import validate_remote_server
+from app.services.common import utc_now
 
 
 def normalize_optional_text(raw_value: str | None) -> str | None:
@@ -69,13 +79,20 @@ def create_server_entry(request: ServerUpsertRequest) -> ServerMutationResponse:
         raise HTTPException(status_code=400, detail="server name is required")
 
     wireguard_ip = normalize_optional_text(request.wireguard_ip)
+    base_url = normalize_base_url(request.base_url, wireguard_ip)
+    auth_token = normalize_optional_text(request.auth_token)
+    if base_url and auth_token:
+        validate_remote_server(base_url, auth_token)
+
     server_id = create_server(
         name=name,
-        base_url=normalize_base_url(request.base_url, wireguard_ip),
-        auth_token=normalize_optional_text(request.auth_token),
+        base_url=base_url,
+        auth_token=auth_token,
         wireguard_ip=wireguard_ip,
         enabled=bool(request.enabled),
     )
+    if base_url and auth_token:
+        touch_server_last_seen(server_id, last_seen_at=utc_now())
     return ServerMutationResponse(message="server saved", server=get_server_record(server_id))
 
 
@@ -90,14 +107,20 @@ def update_server_entry(server_id: int, request: ServerUpsertRequest) -> ServerM
 
     wireguard_ip = normalize_optional_text(request.wireguard_ip)
     next_token = normalize_optional_text(request.auth_token)
+    base_url = normalize_base_url(request.base_url, wireguard_ip)
+    if base_url and next_token:
+        validate_remote_server(base_url, next_token)
+
     update_server(
         server_id,
         name=name,
-        base_url=normalize_base_url(request.base_url, wireguard_ip),
+        base_url=base_url,
         auth_token=next_token,
         wireguard_ip=wireguard_ip,
         enabled=bool(request.enabled),
     )
+    if base_url and next_token:
+        touch_server_last_seen(server_id, last_seen_at=utc_now())
     return ServerMutationResponse(message="server updated", server=get_server_record(server_id))
 
 

@@ -20,6 +20,8 @@ export const state = {
   registrationRequired: false,
   sessionUsername: null,
   selectedEntry: null,
+  selectedServerId: null,
+  selectedServerName: null,
   currentPath: "/",
   parentPath: null,
   showHidden: false,
@@ -169,7 +171,20 @@ export function normalizeFeatureError(error, featureName) {
 }
 
 export async function request(path, options = {}) {
-  const response = await fetch(path, {
+  let requestPath = path;
+  if (Number.isInteger(state.selectedServerId) && typeof path === "string" && path.startsWith("/api/")) {
+    const url = new URL(path, window.location.origin);
+    const excludedPrefixes = ["/api/auth", "/api/servers"];
+    const excludedPaths = new Set(["/api/health"]);
+    const isExcluded = excludedPaths.has(url.pathname)
+      || excludedPrefixes.some((prefix) => url.pathname.startsWith(prefix));
+    if (!isExcluded && !url.searchParams.has("server_id")) {
+      url.searchParams.set("server_id", String(state.selectedServerId));
+      requestPath = `${url.pathname}${url.search}${url.hash}`;
+    }
+  }
+
+  const response = await fetch(requestPath, {
     credentials: "same-origin",
     ...options,
     headers: new Headers(options.headers || {}),

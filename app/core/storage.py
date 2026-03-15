@@ -369,6 +369,42 @@ def list_servers() -> list[dict[str, Any]]:
     ]
 
 
+def load_server_by_id(server_id: int) -> dict[str, Any] | None:
+    with connect() as connection:
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                name,
+                base_url,
+                auth_token,
+                wireguard_ip,
+                enabled,
+                is_local,
+                last_seen_at,
+                created_at,
+                updated_at
+            FROM servers
+            WHERE id = ?
+            """,
+            (server_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": int(row["id"]),
+        "name": str(row["name"]),
+        "base_url": row["base_url"],
+        "auth_token": row["auth_token"],
+        "wireguard_ip": row["wireguard_ip"],
+        "enabled": bool(row["enabled"]),
+        "is_local": bool(row["is_local"]),
+        "last_seen_at": row["last_seen_at"],
+        "created_at": str(row["created_at"]),
+        "updated_at": str(row["updated_at"]),
+    }
+
+
 def create_server(
     *,
     name: str,
@@ -389,9 +425,10 @@ def create_server(
                 wireguard_ip,
                 enabled,
                 is_local,
+                last_seen_at,
                 created_at,
                 updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 name,
@@ -400,6 +437,7 @@ def create_server(
                 wireguard_ip,
                 1 if enabled else 0,
                 1 if is_local else 0,
+                None,
                 now,
                 now,
             ),
@@ -446,6 +484,34 @@ def delete_server(server_id: int) -> None:
         connection.execute(
             "DELETE FROM servers WHERE id = ? AND is_local = 0",
             (server_id,),
+        )
+
+
+def touch_server_last_seen(server_id: int, *, last_seen_at: str | None = None) -> None:
+    with connect() as connection:
+        connection.execute(
+            """
+            UPDATE servers
+            SET
+                last_seen_at = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (last_seen_at or utc_now(), utc_now(), server_id),
+        )
+
+
+def update_server_auth_token(server_id: int, auth_token: str | None) -> None:
+    with connect() as connection:
+        connection.execute(
+            """
+            UPDATE servers
+            SET
+                auth_token = ?,
+                updated_at = ?
+            WHERE id = ? AND is_local = 0
+            """,
+            (auth_token, utc_now(), server_id),
         )
 
 
