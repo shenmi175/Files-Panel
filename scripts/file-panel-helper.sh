@@ -5,8 +5,10 @@ set -euo pipefail
 ENV_FILE="${ENV_FILE:-/etc/files-agent/files-agent.env}"
 SERVICE_USER="${SERVICE_USER:-filepanel}"
 DATABASE_PATH="${DATABASE_PATH:-}"
+STATE_DIR="${STATE_DIR:-}"
 APP_DIR="/opt/files-agent"
 READONLY_HELPER_SCRIPT="${APP_DIR}/scripts/readonly_system_helper.py"
+GLOBAL_COMMAND_PATH="/usr/local/bin/file-panel"
 
 read_env_value() {
   local key="$1"
@@ -50,6 +52,207 @@ read_setting_value() {
     return
   fi
   read_env_value "$key"
+}
+
+state_dir_path() {
+  if [[ -n "$STATE_DIR" ]]; then
+    printf '%s\n' "$STATE_DIR"
+    return
+  fi
+  local from_env
+  from_env="$(read_env_value STATE_DIR)"
+  if [[ -n "$from_env" ]]; then
+    printf '%s\n' "$from_env"
+    return
+  fi
+  printf '%s\n' "/var/lib/files-agent"
+}
+
+update_status_path() {
+  printf '%s\n' "$(state_dir_path)/update-status.json"
+}
+
+update_log_path() {
+  printf '%s\n' "$(state_dir_path)/update.log"
+}
+
+service_role() {
+  local role
+  role="$(read_env_value FILE_PANEL_ROLE)"
+  if [[ -z "$role" ]]; then
+    role="manager"
+  fi
+  printf '%s\n' "$role"
+}
+
+source_project_dir() {
+  local configured
+  configured="$(read_env_value FILE_PANEL_SOURCE_DIR)"
+  if [[ -n "$configured" ]]; then
+    printf '%s\n' "$configured"
+    return
+  fi
+  printf '%s\n' "$APP_DIR"
+}
+
+is_project_dir() {
+  local candidate="$1"
+  [[ -n "$candidate" ]] \
+    && [[ -d "$candidate/app" ]] \
+    && [[ -d "$candidate/static" ]] \
+    && [[ -d "$candidate/scripts" ]] \
+    && [[ -f "$candidate/requirements.txt" ]]
+}
+
+write_update_status_json() {
+  local status_value="$1"
+  local mode_value="$2"
+  local pull_latest_value="$3"
+  local started_at_value="${4:-}"
+  local finished_at_value="${5:-}"
+  local message_value="${6:-}"
+  local log_path_value="${7:-}"
+  local status_path
+  status_path="$(update_status_path)"
+  install -d -m 750 "$(dirname "$status_path")"
+  python3 - "$status_path" "$status_value" "$mode_value" "$pull_latest_value" "$started_at_value" "$finished_at_value" "$message_value" "$log_path_value" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+status_path = Path(sys.argv[1])
+payload = {
+    "status": sys.argv[2],
+    "mode": sys.argv[3] or None,
+    "pull_latest": sys.argv[4] == "1",
+    "started_at": sys.argv[5] or None,
+    "finished_at": sys.argv[6] or None,
+    "message": sys.argv[7] or None,
+    "log_path": sys.argv[8] or None,
+}
+status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+PY
+}
+
+validate_update_mode() {
+  local mode="$1"
+  case "$mode" in
+    quick|redeploy|full-install)
+      ;;
+    *)
+      echo "invalid update mode: $mode" >&2
+      exit 2
+      ;;
+  esac
+}
+
+schedule_update() {
+  local mode="${1:-quick}"
+  local pull_latest="${2:-1}"
+  local source_dir role status_path log_path started_at
+
+  validate_update_mode "$mode"
+  role="$(service_role)"
+  source_dir="$(source_project_dir)"
+  if ! is_project_dir "$source_dir"; then
+    echo "automatic update source directory is invalid: $source_dir" >&2
+    exit 2
+  fi
+  if [[ "$pull_latest" == "1" ]]; then
+    if ! command -v git >/dev/null 2>&1; then
+      echo "git is not installed on this node" >&2
+      exit 2
+    fi
+    if ! git -C "$source_dir" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      echo "source directory is not a git repository: $source_dir" >&2
+      exit 2
+    fi
+  fi
+
+  status_path="$(update_status_path)"
+  log_path="$(update_log_path)"
+  started_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  write_update_status_json "scheduled" "$mode" "$pull_latest" "$started_at" "" "update scheduled" "$log_path"
+  : >"$log_path"
+
+  nohup /bin/bash -lc "
+set -euo pipefail
+status_path=$(printf '%q' "$status_path")
+log_path=$(printf '%q' "$log_path")
+source_dir=$(printf '%q' "$source_dir")
+mode=$(printf '%q' "$mode")
+pull_latest=$(printf '%q' "$pull_latest")
+global_command=$(printf '%q' "$GLOBAL_COMMAND_PATH")
+helper_script=$(printf '%q' "$0")
+started_at=\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")
+python3 - \"\$status_path\" running \"\$mode\" \"\$pull_latest\" \"\$started_at\" \"\" \"update running\" \"\$log_path\" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+status_path = Path(sys.argv[1])
+payload = {
+    'status': sys.argv[2],
+    'mode': sys.argv[3] or None,
+    'pull_latest': sys.argv[4] == '1',
+    'started_at': sys.argv[5] or None,
+    'finished_at': sys.argv[6] or None,
+    'message': sys.argv[7] or None,
+    'log_path': sys.argv[8] or None,
+}
+status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+PY
+{
+  echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] starting automatic update (\$mode)\"
+  if [[ \"\$pull_latest\" == \"1\" ]]; then
+    echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] git pull --ff-only in \$source_dir\"
+    git -C \"\$source_dir\" pull --ff-only
+  else
+    echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] skip git pull\"
+  fi
+  echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] invoking \$global_command \$mode\"
+  FILE_PANEL_SOURCE_DIR=\"\$source_dir\" \"\$global_command\" \"\$mode\"
+} >>\"\$log_path\" 2>&1
+exit_code=\$?
+finished_at=\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")
+if [[ \$exit_code -eq 0 ]]; then
+  python3 - \"\$status_path\" succeeded \"\$mode\" \"\$pull_latest\" \"\$started_at\" \"\$finished_at\" \"update completed\" \"\$log_path\" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+status_path = Path(sys.argv[1])
+payload = {
+    'status': sys.argv[2],
+    'mode': sys.argv[3] or None,
+    'pull_latest': sys.argv[4] == '1',
+    'started_at': sys.argv[5] or None,
+    'finished_at': sys.argv[6] or None,
+    'message': sys.argv[7] or None,
+    'log_path': sys.argv[8] or None,
+}
+status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+PY
+else
+  python3 - \"\$status_path\" failed \"\$mode\" \"\$pull_latest\" \"\$started_at\" \"\$finished_at\" \"update failed; inspect update.log\" \"\$log_path\" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+status_path = Path(sys.argv[1])
+payload = {
+    'status': sys.argv[2],
+    'mode': sys.argv[3] or None,
+    'pull_latest': sys.argv[4] == '1',
+    'started_at': sys.argv[5] or None,
+    'finished_at': sys.argv[6] or None,
+    'message': sys.argv[7] or None,
+    'log_path': sys.argv[8] or None,
+}
+status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
+PY
+fi
+" >/dev/null 2>&1 &
 }
 
 DOMAIN_RE='^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$'
@@ -494,6 +697,9 @@ case "$command" in
     ;;
   issue-cert)
     issue_cert "${1:-}" "${2:-}"
+    ;;
+  schedule-update)
+    schedule_update "${1:-quick}" "${2:-1}"
     ;;
   grant-path-access)
     grant_path_access "${1:-}"

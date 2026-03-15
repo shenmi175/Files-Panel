@@ -92,6 +92,7 @@ copy_project_files() {
     "$APP_DIR/README.md" \
     "$APP_DIR/ARCHITECTURE.md" \
     "$APP_DIR/WIREGUARD.md" \
+    "$APP_DIR/VERSION" \
     "$APP_DIR/requirements.txt" \
     "$APP_DIR/.env.example"
 
@@ -99,7 +100,7 @@ copy_project_files() {
   cp -a "$PROJECT_DIR/static" "$APP_DIR/"
   cp -a "$PROJECT_DIR/scripts" "$APP_DIR/"
 
-  for doc_name in README.md ARCHITECTURE.md WIREGUARD.md requirements.txt .env.example; do
+  for doc_name in README.md ARCHITECTURE.md WIREGUARD.md VERSION requirements.txt .env.example; do
     if [[ -f "$PROJECT_DIR/$doc_name" ]]; then
       cp -a "$PROJECT_DIR/$doc_name" "$APP_DIR/"
     fi
@@ -255,6 +256,7 @@ fi
 cat >"$ENV_FILE" <<EOF
 # Managed by File Panel installer
 FILE_PANEL_ROLE=$FILE_PANEL_ROLE
+FILE_PANEL_SOURCE_DIR=$PROJECT_DIR
 HOST=$HOST_VALUE
 PORT=3000
 AGENT_NAME=$AGENT_NAME_VALUE

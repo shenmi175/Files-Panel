@@ -38,6 +38,8 @@ import {
   resetServerForm,
   saveConfig,
   saveServer,
+  triggerAllNodeUpdates,
+  triggerNodeUpdate,
 } from "./settings.js";
 
 const AUTH_REQUIRED_MESSAGE = "请先登录后再访问面板内容。";
@@ -58,7 +60,10 @@ function isViewWarm(view) {
     case "access":
       return state.accessLoaded && state.configLoaded;
     case "nodes":
-      return state.accessLoaded && state.serversLoaded && state.wireguardBootstrapLoaded;
+      return state.accessLoaded
+        && state.serversLoaded
+        && state.wireguardBootstrapLoaded
+        && state.updateStatusLoaded;
     case "logs":
       return state.accessLoaded && state.logsLoaded;
     default:
@@ -109,6 +114,8 @@ function resetProtectedState() {
   state.serversLoaded = false;
   state.wireguardBootstrapLoaded = false;
   state.wireguardBootstrapStatus = null;
+  state.updateStatusLoaded = false;
+  state.updateStatus = null;
   state.logsLoaded = false;
   state.preloadStarted = false;
   state.selectedEntry = null;
@@ -134,6 +141,8 @@ function resetSelectedNodeData() {
   state.logsLoaded = false;
   state.wireguardBootstrapLoaded = false;
   state.wireguardBootstrapStatus = null;
+  state.updateStatusLoaded = false;
+  state.updateStatus = null;
   state.logsCursor = null;
   state.logLines = [];
   state.preloadStarted = false;
@@ -536,6 +545,17 @@ function wireEvents() {
   });
   dom.copyWireguardBootstrapButton?.addEventListener("click", () => {
     copyWireguardBootstrapCommand().catch((error) => showStatus(error.message, "error"));
+  });
+  dom.nodeUpdateForm?.addEventListener("submit", (event) => {
+    triggerNodeUpdate(event).catch((error) => showStatus(error.message, "error"));
+  });
+  dom.triggerAllNodeUpdatesButton?.addEventListener("click", () => {
+    triggerAllNodeUpdates().catch((error) => showStatus(error.message, "error"));
+  });
+  dom.refreshNodeUpdateStatusButton?.addEventListener("click", () => {
+    refreshSettings({ includeConfig: false, includeServers: true }).catch((error) =>
+      showStatus(error.message, "error")
+    );
   });
   dom.viewTabs.forEach((button) => {
     button.addEventListener("click", () => {

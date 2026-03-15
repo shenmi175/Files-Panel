@@ -7,6 +7,7 @@ import {
   setAccessPlaceholder,
   setConfigPlaceholder,
   setServersPlaceholder,
+  setUpdatePlaceholder,
   setWireguardBootstrapPlaceholder,
   showStatus,
   state,
@@ -397,6 +398,84 @@ export async function loadServers() {
   renderServers({ items: Array.isArray(payload?.items) ? payload.items : [] });
 }
 
+export function renderUpdateStatus(payload) {
+  state.updateStatusLoaded = true;
+  state.updateStatus = payload;
+
+  if (dom.nodeUpdateSummaryEl) {
+    const targetLabel = state.selectedServerName || "local manager";
+    const sourceLabel = payload?.source_dir || "not linked";
+    dom.nodeUpdateSummaryEl.textContent = `${targetLabel}: source ${sourceLabel}`;
+  }
+
+  if (dom.nodeUpdateCurrentVersionEl) {
+    dom.nodeUpdateCurrentVersionEl.textContent = payload?.current_version || "-";
+  }
+
+  if (dom.nodeUpdateLatestVersionEl) {
+    dom.nodeUpdateLatestVersionEl.textContent = payload?.latest_version || "-";
+  }
+
+  if (dom.nodeUpdateAvailabilityEl) {
+    if (!payload?.auto_update_available) {
+      dom.nodeUpdateAvailabilityEl.textContent = "Unavailable";
+    } else if (payload?.update_available) {
+      dom.nodeUpdateAvailabilityEl.textContent = "Update Available";
+    } else if (payload?.current_version && payload?.latest_version) {
+      dom.nodeUpdateAvailabilityEl.textContent = "Up to Date";
+    } else {
+      dom.nodeUpdateAvailabilityEl.textContent = "Check Failed";
+    }
+  }
+
+  if (dom.triggerNodeUpdateButton) {
+    const status = String(payload?.status || "").toLowerCase();
+    const busy = status === "scheduled" || status === "running";
+    dom.triggerNodeUpdateButton.disabled = !payload?.auto_update_available || busy;
+    dom.triggerNodeUpdateButton.textContent = busy ? "Update Running" : "Update Now";
+  }
+
+  if (dom.triggerAllNodeUpdatesButton) {
+    const hasRemoteNodes = state.servers.some((item) => !item.is_local && item.enabled);
+    dom.triggerAllNodeUpdatesButton.disabled = !hasRemoteNodes;
+  }
+
+  if (!dom.nodeUpdateStatusEl) {
+    return;
+  }
+
+  const parts = [];
+  if (payload?.update_available) {
+    parts.push("update available");
+  } else if (payload?.current_version && payload?.latest_version) {
+    parts.push("already latest");
+  } else {
+    parts.push(payload?.auto_update_available ? "version check unavailable" : "auto-update unavailable");
+  }
+  if (payload?.git_repo) {
+    parts.push("git repo linked");
+  } else if (payload?.project_dir_valid) {
+    parts.push("no git repo");
+  } else {
+    parts.push("source dir invalid");
+  }
+  if (payload?.status) {
+    parts.push(`status: ${payload.status}`);
+  }
+  if (payload?.mode) {
+    parts.push(`mode: ${payload.mode}`);
+  }
+  if (payload?.message) {
+    parts.push(payload.message);
+  }
+  dom.nodeUpdateStatusEl.textContent = parts.join(" · ");
+}
+
+export async function loadUpdateStatus() {
+  const payload = await request("/api/update/status");
+  renderUpdateStatus(payload);
+}
+
 export async function generateWireguardBootstrap(event) {
   event.preventDefault();
 
@@ -460,6 +539,7 @@ export async function refreshSettings({ includeConfig = true, includeServers = t
     includeConfig ? loadConfig() : Promise.resolve(),
     includeServers ? loadServers() : Promise.resolve(),
     includeServers ? loadWireguardBootstrapStatus() : Promise.resolve(),
+    includeServers ? loadUpdateStatus() : Promise.resolve(),
   ]);
 
   if (results[0].status === "rejected") {
@@ -480,6 +560,10 @@ export async function refreshSettings({ includeConfig = true, includeServers = t
     setWireguardBootstrapPlaceholder(
       normalizeFeatureError(results[3].reason, "WireGuard 引导接入")
     );
+  }
+  if (includeServers && results[4].status === "rejected") {
+    state.updateStatusLoaded = false;
+    setUpdatePlaceholder(normalizeFeatureError(results[4].reason, "Auto Update"));
   }
 }
 
@@ -660,6 +744,91 @@ export async function saveServer(event) {
     showStatus(response.message, "success");
   } catch (error) {
     showStatus(error.message, "error");
+  }
+}
+
+export async function triggerNodeUpdate(event) {
+  event?.preventDefault?.();
+
+  const payload = {
+    mode: dom.nodeUpdateModeInput?.value || "quick",
+    pull_latest: Boolean(dom.nodeUpdatePullLatestInput?.checked),
+  };
+
+  try {
+    const response = await request("/api/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    renderUpdateStatus(response.status);
+    showStatus(
+      `${state.selectedServerName || "local manager"} update scheduled: ${payload.mode}`,
+      "info",
+      { autoClearMs: 8000 }
+    );
+
+    if (state.selectedServerId === null) {
+      window.setTimeout(() => {
+        window.location.reload();
+      }, 12000);
+      return;
+    }
+
+    window.setTimeout(() => {
+      loadUpdateStatus().catch(() => {});
+    }, 5000);
+  } catch (error) {
+    showStatus(error.message, "error");
+  }
+}
+
+export async function triggerAllNodeUpdates() {
+  const enabledRemoteNodes = state.servers.filter((item) => !item.is_local && item.enabled);
+  if (!enabledRemoteNodes.length) {
+    showStatus("No enabled remote agent nodes available", "error");
+    return;
+  }
+
+  if (
+    !window.confirm(
+      `Schedule update for ${enabledRemoteNodes.length} remote agent node(s)? Manager will not be updated by this action.`
+    )
+  ) {
+    return;
+  }
+
+  const payload = {
+    mode: dom.nodeUpdateModeInput?.value || "quick",
+    pull_latest: Boolean(dom.nodeUpdatePullLatestInput?.checked),
+  };
+
+  dom.triggerAllNodeUpdatesButton.disabled = true;
+  try {
+    const response = await request("/api/update/all-nodes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+
+    const summary = `${response.scheduled_nodes}/${response.total_nodes} agent nodes scheduled`;
+    const firstFailure = Array.isArray(response.results)
+      ? response.results.find((item) => !item.scheduled)
+      : null;
+    showStatus(
+      firstFailure
+        ? `${summary}; ${firstFailure.server_name}: ${firstFailure.message}`
+        : `${summary}; mode=${response.mode}`,
+      firstFailure ? "info" : "success",
+      { autoClearMs: 10000 }
+    );
+  } catch (error) {
+    showStatus(error.message, "error");
+  } finally {
+    if (dom.triggerAllNodeUpdatesButton) {
+      const hasRemoteNodes = state.servers.some((item) => !item.is_local && item.enabled);
+      dom.triggerAllNodeUpdatesButton.disabled = !hasRemoteNodes;
+    }
   }
 }
 

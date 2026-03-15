@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -314,6 +315,55 @@ class CreateDirectoryRequest(BaseModel):
 
 class MessageResponse(BaseModel):
     message: str
+
+
+class UpdateStatusResponse(BaseModel):
+    role: str
+    source_dir: str | None
+    source_dir_exists: bool
+    project_dir_valid: bool
+    git_available: bool
+    git_repo: bool
+    auto_update_available: bool
+    current_version: str | None = None
+    latest_version: str | None = None
+    update_available: bool = False
+    latest_checked_at: str | None = None
+    status: str
+    mode: str | None = None
+    pull_latest: bool | None = None
+    started_at: str | None = None
+    finished_at: str | None = None
+    message: str | None = None
+    log_path: str | None = None
+
+
+class UpdateTriggerRequest(BaseModel):
+    mode: Literal["quick", "redeploy", "full-install"] = "quick"
+    pull_latest: bool = True
+
+
+class UpdateTriggerResponse(BaseModel):
+    message: str
+    scheduled: bool
+    status: UpdateStatusResponse
+
+
+class BatchUpdateNodeResult(BaseModel):
+    server_id: int
+    server_name: str
+    scheduled: bool
+    message: str
+
+
+class BatchUpdateTriggerResponse(BaseModel):
+    message: str
+    mode: Literal["quick", "redeploy", "full-install"]
+    pull_latest: bool
+    total_nodes: int
+    scheduled_nodes: int
+    failed_nodes: int
+    results: list[BatchUpdateNodeResult]
 
 
 class ServerRecord(BaseModel):

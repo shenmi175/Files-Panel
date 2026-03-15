@@ -42,6 +42,8 @@ export const state = {
   serversLoaded: false,
   wireguardBootstrapLoaded: false,
   wireguardBootstrapStatus: null,
+  updateStatusLoaded: false,
+  updateStatus: null,
   logsLoaded: false,
   logsCursor: null,
   logLines: [],
@@ -149,7 +151,67 @@ function ensureWireguardBootstrapPanel() {
   nodesGrid.appendChild(panel);
 }
 
+function ensureNodeUpdatePanel() {
+  const nodesView = document.getElementById("nodes-view");
+  const nodesGrid = nodesView?.querySelector(".nodes-grid");
+  if (!nodesGrid || document.getElementById("node-update-form")) {
+    return;
+  }
+
+  const panel = document.createElement("article");
+  panel.className = "panel section-panel node-update-panel span-full";
+  panel.innerHTML = `
+    <div class="section-head">
+      <div>
+        <p class="section-kicker">Updates</p>
+        <h2>Auto Update</h2>
+        <p id="node-update-summary" class="muted">
+          Select a node to check the current version, latest available version, and update status.
+        </p>
+      </div>
+      <div class="section-actions">
+        <button id="refresh-node-update-status" type="button" class="secondary">Refresh Status</button>
+      </div>
+    </div>
+    <div class="update-version-grid">
+      <div class="update-version-card">
+        <span>Current Version</span>
+        <strong id="node-update-current-version">-</strong>
+      </div>
+      <div class="update-version-card">
+        <span>Latest Version</span>
+        <strong id="node-update-latest-version">-</strong>
+      </div>
+      <div class="update-version-card">
+        <span>Update State</span>
+        <strong id="node-update-availability">Checking...</strong>
+      </div>
+    </div>
+    <div id="node-update-status" class="ghost-chip">Loading update capability...</div>
+    <form id="node-update-form" class="settings-form compact-form">
+      <label class="field">
+        <span>Update mode</span>
+        <select id="node-update-mode">
+          <option value="quick" selected>quick</option>
+          <option value="redeploy">redeploy</option>
+          <option value="full-install">full-install</option>
+        </select>
+      </label>
+      <label class="toggle card-toggle">
+        <input id="node-update-pull-latest" type="checkbox" checked />
+        <span>Run <code>git pull --ff-only</code> first</span>
+      </label>
+      <div class="form-actions span-2">
+        <button id="trigger-node-update" type="submit">Update Now</button>
+        <button id="trigger-all-node-updates" type="button" class="secondary">Update All Agents</button>
+      </div>
+    </form>
+  `;
+  nodesGrid.appendChild(panel);
+}
+
 ensureWireguardBootstrapPanel();
+ensureNodeUpdatePanel();
 ensureFileBrowserControls();
 
 export const dom = {
@@ -216,6 +278,17 @@ export const dom = {
   wireguardBootstrapCommandInput: document.getElementById("wireguard-bootstrap-command"),
   generateWireguardBootstrapButton: document.getElementById("generate-wireguard-bootstrap"),
   copyWireguardBootstrapButton: document.getElementById("copy-wireguard-bootstrap"),
+  nodeUpdateSummaryEl: document.getElementById("node-update-summary"),
+  nodeUpdateCurrentVersionEl: document.getElementById("node-update-current-version"),
+  nodeUpdateLatestVersionEl: document.getElementById("node-update-latest-version"),
+  nodeUpdateAvailabilityEl: document.getElementById("node-update-availability"),
+  nodeUpdateStatusEl: document.getElementById("node-update-status"),
+  nodeUpdateForm: document.getElementById("node-update-form"),
+  nodeUpdateModeInput: document.getElementById("node-update-mode"),
+  nodeUpdatePullLatestInput: document.getElementById("node-update-pull-latest"),
+  triggerNodeUpdateButton: document.getElementById("trigger-node-update"),
+  triggerAllNodeUpdatesButton: document.getElementById("trigger-all-node-updates"),
+  refreshNodeUpdateStatusButton: document.getElementById("refresh-node-update-status"),
   filesEl: document.getElementById("files"),
   activePathLabel: document.getElementById("active-path"),
   pathBreadcrumbsEl: document.getElementById("path-breadcrumbs"),
@@ -325,7 +398,7 @@ export async function request(path, options = {}) {
   if (Number.isInteger(state.selectedServerId) && typeof path === "string" && path.startsWith("/api/")) {
     const url = new URL(path, window.location.origin);
     const excludedPrefixes = ["/api/auth", "/api/servers", "/api/bootstrap"];
-    const excludedPaths = new Set(["/api/health"]);
+    const excludedPaths = new Set(["/api/health", "/api/update/all-nodes"]);
     const isExcluded = excludedPaths.has(url.pathname)
       || excludedPrefixes.some((prefix) => url.pathname.startsWith(prefix));
     if (!isExcluded && !url.searchParams.has("server_id")) {
@@ -617,6 +690,30 @@ export function setWireguardBootstrapPlaceholder(message) {
   }
 }
 
+export function setUpdatePlaceholder(message) {
+  if (dom.nodeUpdateSummaryEl) {
+    dom.nodeUpdateSummaryEl.textContent = message;
+  }
+  if (dom.nodeUpdateCurrentVersionEl) {
+    dom.nodeUpdateCurrentVersionEl.textContent = "-";
+  }
+  if (dom.nodeUpdateLatestVersionEl) {
+    dom.nodeUpdateLatestVersionEl.textContent = "-";
+  }
+  if (dom.nodeUpdateAvailabilityEl) {
+    dom.nodeUpdateAvailabilityEl.textContent = "Unavailable";
+  }
+  if (dom.nodeUpdateStatusEl) {
+    dom.nodeUpdateStatusEl.textContent = message;
+  }
+  if (dom.triggerNodeUpdateButton) {
+    dom.triggerNodeUpdateButton.disabled = true;
+  }
+  if (dom.triggerAllNodeUpdatesButton) {
+    dom.triggerAllNodeUpdatesButton.disabled = true;
+  }
+}
+
 export function clearProtectedViews(message) {
   setResourcesPlaceholder(message);
   setChartPlaceholder(message);
@@ -625,5 +722,6 @@ export function clearProtectedViews(message) {
   setConfigPlaceholder(message);
   setServersPlaceholder(message);
   setWireguardBootstrapPlaceholder(message);
+  setUpdatePlaceholder(message);
   setLogsPlaceholder(message);
 }

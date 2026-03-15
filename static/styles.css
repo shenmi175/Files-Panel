@@ -1235,9 +1235,51 @@ h3 {
   gap: 18px;
 }
 
+.node-update-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.update-version-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.update-version-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.68);
+}
+
+.update-version-card span {
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+
+.update-version-card strong {
+  font-size: 1.08rem;
+}
+
 .wireguard-bootstrap-status-grid {
   display: grid;
   gap: 10px;
+}
+
+#node-update-status {
+  width: fit-content;
+  max-width: 100%;
+  line-height: 1.5;
+}
+
+@media (max-width: 720px) {
+  .update-version-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 #wireguard-bootstrap-command {
