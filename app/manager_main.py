@@ -47,3 +47,7 @@ def run() -> None:
         proxy_headers=True,
         forwarded_allow_ips="*",
     )
+
+
+if __name__ == "__main__":
+    run()

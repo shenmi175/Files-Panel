@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import ipaddress
 import os
 import secrets
@@ -164,9 +165,16 @@ def validate_port(value: str) -> str:
 
 
 def validate_public_key(value: str) -> str:
-    if len(value.strip()) < 20:
-        raise ValueError("看起来不像合法的 WireGuard 公钥")
-    return value.strip()
+    normalized = value.strip()
+    if len(normalized) != 44 or not normalized.endswith("="):
+        raise ValueError("WireGuard 公钥通常应为 44 个字符，并以 '=' 结尾")
+    try:
+        decoded = base64.b64decode(normalized, validate=True)
+    except Exception as exc:  # noqa: BLE001
+        raise ValueError("不是合法的 Base64 WireGuard 公钥") from exc
+    if len(decoded) != 32:
+        raise ValueError("WireGuard 公钥解码后必须是 32 字节")
+    return normalized
 
 
 def validate_address_cidr(value: str) -> str:
@@ -278,7 +286,10 @@ def main() -> int:
         default=str(DEFAULT_WIREGUARD_PORT),
         validator=validate_port,
     )
-    manager_public_key = prompt_text("manager 的 WireGuard 公钥", validator=validate_public_key)
+    manager_public_key = prompt_text(
+        "manager 的 WireGuard 公钥（请用 sudo wg show wg0 public-key 查看）",
+        validator=validate_public_key,
+    )
     address_cidr = prompt_text(
         "分配给这台主机的 WireGuard 内网地址",
         validator=validate_address_cidr,
