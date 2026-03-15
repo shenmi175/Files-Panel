@@ -25,6 +25,8 @@ import { loadLogsSection, resetLogsState } from "./logs.js";
 import { loadResourcesSection } from "./resources.js";
 import {
   configureDomain,
+  copyWireguardBootstrapCommand,
+  generateWireguardBootstrap,
   handleServersClick,
   loadAccess,
   refreshSettings,
@@ -52,7 +54,7 @@ function isViewWarm(view) {
     case "access":
       return state.accessLoaded && state.configLoaded;
     case "nodes":
-      return state.accessLoaded && state.serversLoaded;
+      return state.accessLoaded && state.serversLoaded && state.wireguardBootstrapLoaded;
     case "logs":
       return state.accessLoaded && state.logsLoaded;
     default:
@@ -101,6 +103,8 @@ function resetProtectedState() {
   state.accessLoaded = false;
   state.configLoaded = false;
   state.serversLoaded = false;
+  state.wireguardBootstrapLoaded = false;
+  state.wireguardBootstrapStatus = null;
   state.logsLoaded = false;
   state.preloadStarted = false;
   state.selectedEntry = null;
@@ -120,6 +124,8 @@ function resetSelectedNodeData() {
   state.accessLoaded = false;
   state.configLoaded = false;
   state.logsLoaded = false;
+  state.wireguardBootstrapLoaded = false;
+  state.wireguardBootstrapStatus = null;
   state.logsCursor = null;
   state.logLines = [];
   state.preloadStarted = false;
@@ -504,6 +510,12 @@ function wireEvents() {
   dom.serverForm.addEventListener("submit", saveServer);
   dom.resetServerFormButton.addEventListener("click", resetServerForm);
   dom.serversListEl.addEventListener("click", handleServersClick);
+  dom.wireguardBootstrapForm?.addEventListener("submit", (event) => {
+    generateWireguardBootstrap(event).catch((error) => showStatus(error.message, "error"));
+  });
+  dom.copyWireguardBootstrapButton?.addEventListener("click", () => {
+    copyWireguardBootstrapCommand().catch((error) => showStatus(error.message, "error"));
+  });
   dom.viewTabs.forEach((button) => {
     button.addEventListener("click", () => {
       handleTopLevelViewChange(button.dataset.view).catch((error) =>

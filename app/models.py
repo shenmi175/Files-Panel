@@ -339,6 +339,56 @@ class ServerMutationResponse(BaseModel):
     server: ServerRecord
 
 
+class WireGuardBootstrapStatusResponse(BaseModel):
+    available: bool
+    interface_name: str
+    manager_address: str | None = None
+    manager_network: str | None = None
+    public_key: str | None = None
+    listen_port: int | None = None
+    message: str | None = None
+
+
+class WireGuardBootstrapPrepareRequest(BaseModel):
+    manager_url: str = Field(min_length=1, max_length=512)
+    endpoint_host: str | None = Field(default=None, max_length=255)
+    node_name: str | None = Field(default=None, max_length=120)
+    expires_in_minutes: int = Field(default=20, ge=5, le=120)
+
+
+class WireGuardBootstrapPrepareResponse(BaseModel):
+    message: str
+    manager_url: str
+    endpoint_host: str
+    bootstrap_token: str
+    expires_at: str
+    install_command: str
+    bootstrap_command: str
+    combined_command: str
+
+
+class WireGuardBootstrapRegisterRequest(BaseModel):
+    agent_name: str = Field(min_length=1, max_length=120)
+    agent_token: str = Field(min_length=16, max_length=512)
+    public_key: str = Field(min_length=20, max_length=120)
+    agent_port: int = Field(default=3000, ge=1, le=65535)
+
+
+class WireGuardBootstrapRegisterResponse(BaseModel):
+    message: str
+    server_id: int
+    server_name: str
+    manager_url: str
+    wireguard_ip: str
+    address_cidr: str
+    network_cidr: str
+    endpoint: str
+    manager_public_key: str
+    allowed_ips: str
+    persistent_keepalive: int
+    base_url: str
+
+
 @dataclass
 class ResourceRateTracker:
     timestamp: float

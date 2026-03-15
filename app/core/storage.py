@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import hashlib
+import secrets
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -148,6 +150,20 @@ def initialize_storage(default_config: dict[str, str] | None = None) -> None:
                 network_upload_bps INTEGER NOT NULL,
                 disk_read_bps INTEGER NOT NULL,
                 disk_write_bps INTEGER NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS wireguard_bootstrap_tokens (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                token_hash TEXT NOT NULL UNIQUE,
+                manager_url TEXT NOT NULL,
+                endpoint_host TEXT NOT NULL,
+                requested_name TEXT,
+                expires_at TEXT NOT NULL,
+                used_at TEXT,
+                assigned_wireguard_ip TEXT,
+                server_id INTEGER,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
             );
             """
         )
@@ -646,3 +662,113 @@ def prune_resource_samples(before: str) -> None:
             "DELETE FROM resource_samples WHERE sampled_at < ?",
             (before,),
         )
+
+
+def _hash_bootstrap_token(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def create_wireguard_bootstrap_token(
+    *,
+    manager_url: str,
+    endpoint_host: str,
+    requested_name: str | None,
+    expires_at: str,
+) -> tuple[int, str]:
+    raw_token = secrets.token_urlsafe(24)
+    token_hash = _hash_bootstrap_token(raw_token)
+    now = utc_now()
+    with connect() as connection:
+        cursor = connection.execute(
+            """
+            INSERT INTO wireguard_bootstrap_tokens (
+                token_hash,
+                manager_url,
+                endpoint_host,
+                requested_name,
+                expires_at,
+                used_at,
+                assigned_wireguard_ip,
+                server_id,
+                created_at,
+                updated_at
+            ) VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?)
+            """,
+            (token_hash, manager_url, endpoint_host, requested_name, expires_at, now, now),
+        )
+        return int(cursor.lastrowid), raw_token
+
+
+def load_wireguard_bootstrap_token(raw_token: str) -> dict[str, Any] | None:
+    token_hash = _hash_bootstrap_token(raw_token)
+    with connect() as connection:
+        row = connection.execute(
+            """
+            SELECT
+                id,
+                manager_url,
+                endpoint_host,
+                requested_name,
+                expires_at,
+                used_at,
+                assigned_wireguard_ip,
+                server_id,
+                created_at,
+                updated_at
+            FROM wireguard_bootstrap_tokens
+            WHERE token_hash = ?
+            """,
+            (token_hash,),
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "id": int(row["id"]),
+        "manager_url": str(row["manager_url"]),
+        "endpoint_host": str(row["endpoint_host"]),
+        "requested_name": str(row["requested_name"]) if row["requested_name"] else None,
+        "expires_at": str(row["expires_at"]),
+        "used_at": str(row["used_at"]) if row["used_at"] else None,
+        "assigned_wireguard_ip": str(row["assigned_wireguard_ip"]) if row["assigned_wireguard_ip"] else None,
+        "server_id": int(row["server_id"]) if row["server_id"] is not None else None,
+        "created_at": str(row["created_at"]),
+        "updated_at": str(row["updated_at"]),
+    }
+
+
+def mark_wireguard_bootstrap_token_used(
+    token_id: int,
+    *,
+    assigned_wireguard_ip: str,
+    server_id: int,
+) -> None:
+    now = utc_now()
+    with connect() as connection:
+        connection.execute(
+            """
+            UPDATE wireguard_bootstrap_tokens
+            SET
+                used_at = ?,
+                assigned_wireguard_ip = ?,
+                server_id = ?,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (now, assigned_wireguard_ip, server_id, now, token_id),
+        )
+
+
+def list_allocated_wireguard_ips() -> list[str]:
+    with connect() as connection:
+        rows = connection.execute(
+            """
+            SELECT wireguard_ip AS ip_value
+            FROM servers
+            WHERE wireguard_ip IS NOT NULL AND wireguard_ip != ''
+            UNION
+            SELECT assigned_wireguard_ip AS ip_value
+            FROM wireguard_bootstrap_tokens
+            WHERE assigned_wireguard_ip IS NOT NULL AND assigned_wireguard_ip != ''
+            """
+        ).fetchall()
+    return [str(row["ip_value"]) for row in rows if row["ip_value"]]

@@ -7,6 +7,7 @@ import {
   setAccessPlaceholder,
   setConfigPlaceholder,
   setServersPlaceholder,
+  setWireguardBootstrapPlaceholder,
   showStatus,
   state,
   updateHeroAccess,
@@ -18,6 +19,89 @@ const RESTART_RECOVERY_INTERVAL_MS = 1200;
 const RESTART_RECOVERY_MAX_ATTEMPTS = 20;
 const RESOURCE_SAMPLE_INTERVAL_OPTIONS = [5, 10, 15];
 let restartResolutionRunId = 0;
+
+function defaultBootstrapManagerUrl() {
+  const origin = window.location.origin;
+  return origin && origin !== "null" ? origin : "";
+}
+
+function inferEndpointHost(rawUrl) {
+  try {
+    return new URL(rawUrl).hostname || "";
+  } catch {
+    return "";
+  }
+}
+
+function formatBootstrapTimestamp(rawValue) {
+  if (!rawValue) {
+    return "-";
+  }
+  const date = new Date(rawValue);
+  if (Number.isNaN(date.getTime())) {
+    return rawValue;
+  }
+  return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+async function copyTextWithFallback(text, promptMessage) {
+  if (!text) {
+    return false;
+  }
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall through to prompt fallback.
+    }
+  }
+  window.prompt(promptMessage, text);
+  return false;
+}
+
+export function renderWireguardBootstrapStatus(payload) {
+  state.wireguardBootstrapLoaded = true;
+  state.wireguardBootstrapStatus = payload;
+  dom.copyWireguardBootstrapButton.disabled = !dom.wireguardBootstrapCommandInput.value.trim();
+
+  if (!dom.wireguardBootstrapManagerUrlInput.value.trim()) {
+    dom.wireguardBootstrapManagerUrlInput.value = defaultBootstrapManagerUrl();
+  }
+  if (!dom.wireguardBootstrapEndpointHostInput.value.trim()) {
+    dom.wireguardBootstrapEndpointHostInput.value = inferEndpointHost(
+      dom.wireguardBootstrapManagerUrlInput.value.trim()
+    );
+  }
+
+  const available = Boolean(payload?.available);
+  if (!available) {
+    dom.wireguardBootstrapSummaryEl.textContent = "Manager wg0 未就绪";
+    dom.wireguardBootstrapStatusEl.textContent =
+      payload?.message || "请先在 manager 上配置并启动 wg0。准备完成后，可以在目标主机运行 sudo file-panel setup-agent。";
+    return;
+  }
+
+  const summaryParts = [];
+  if (payload.manager_address) {
+    summaryParts.push(payload.manager_address);
+  }
+  if (payload.manager_network) {
+    summaryParts.push(payload.manager_network);
+  }
+  if (payload.listen_port) {
+    summaryParts.push(`UDP ${payload.listen_port}`);
+  }
+
+  dom.wireguardBootstrapSummaryEl.textContent = `Manager wg0 已就绪 · ${summaryParts.join(" · ")}`;
+  dom.wireguardBootstrapStatusEl.textContent =
+    "推荐：先在目标主机运行 sudo file-panel setup-agent，通过问答向导完成内网配置，再回到当前页面手动填写 WireGuard IP 和 Agent Token。";
+}
+
+export async function loadWireguardBootstrapStatus() {
+  const payload = await request("/api/bootstrap/wireguard/status");
+  renderWireguardBootstrapStatus(payload);
+}
 
 function isLikelyRestartInterruption(error) {
   const message = String(error?.message || "").toLowerCase();
@@ -313,11 +397,69 @@ export async function loadServers() {
   renderServers({ items: Array.isArray(payload?.items) ? payload.items : [] });
 }
 
+export async function generateWireguardBootstrap(event) {
+  event.preventDefault();
+
+  const managerUrl = dom.wireguardBootstrapManagerUrlInput.value.trim() || defaultBootstrapManagerUrl();
+  const endpointHost =
+    dom.wireguardBootstrapEndpointHostInput.value.trim() || inferEndpointHost(managerUrl);
+  const expiresInMinutes = Number(dom.wireguardBootstrapExpiryInput.value || "20");
+  const nodeName = dom.wireguardBootstrapNodeNameInput.value.trim();
+
+  if (!managerUrl) {
+    showStatus("请先填写 manager 对外地址", "error");
+    return;
+  }
+
+  dom.generateWireguardBootstrapButton.disabled = true;
+  try {
+    const payload = await request("/api/bootstrap/wireguard/prepare", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        manager_url: managerUrl,
+        endpoint_host: endpointHost || null,
+        node_name: nodeName || null,
+        expires_in_minutes: expiresInMinutes,
+      }),
+    });
+
+    dom.wireguardBootstrapManagerUrlInput.value = payload.manager_url;
+    dom.wireguardBootstrapEndpointHostInput.value = payload.endpoint_host;
+    dom.wireguardBootstrapCommandInput.value = payload.combined_command;
+    dom.copyWireguardBootstrapButton.disabled = false;
+    dom.wireguardBootstrapSummaryEl.textContent =
+      `一次性引导命令已生成 · ${formatBootstrapTimestamp(payload.expires_at)} 前有效`;
+    dom.wireguardBootstrapStatusEl.textContent =
+      "这是高级自动接入模式。若你希望手动登记节点，也可以改为在目标主机运行 sudo file-panel setup-agent，拿到 WireGuard IP 和 Agent Token 后回到上面的节点表单填写。";
+
+    showStatus("WireGuard 引导命令已生成", "success", { autoClearMs: 5000 });
+  } catch (error) {
+    showStatus(error.message, "error");
+  } finally {
+    dom.generateWireguardBootstrapButton.disabled = false;
+  }
+}
+
+export async function copyWireguardBootstrapCommand() {
+  const command = dom.wireguardBootstrapCommandInput.value.trim();
+  if (!command) {
+    showStatus("请先生成引导命令", "error");
+    return;
+  }
+
+  const copied = await copyTextWithFallback(command, "复制这段引导命令");
+  showStatus(copied ? "引导命令已复制" : "引导命令已显示，可手动复制", "success", {
+    autoClearMs: 4000,
+  });
+}
+
 export async function refreshSettings({ includeConfig = true, includeServers = true } = {}) {
   const results = await Promise.allSettled([
     loadAccess(),
     includeConfig ? loadConfig() : Promise.resolve(),
     includeServers ? loadServers() : Promise.resolve(),
+    includeServers ? loadWireguardBootstrapStatus() : Promise.resolve(),
   ]);
 
   if (results[0].status === "rejected") {
@@ -332,6 +474,12 @@ export async function refreshSettings({ includeConfig = true, includeServers = t
   if (includeServers && results[2].status === "rejected") {
     state.serversLoaded = false;
     setServersPlaceholder(normalizeFeatureError(results[2].reason, "节点目录"));
+  }
+  if (includeServers && results[3].status === "rejected") {
+    state.wireguardBootstrapLoaded = false;
+    setWireguardBootstrapPlaceholder(
+      normalizeFeatureError(results[3].reason, "WireGuard 引导接入")
+    );
   }
 }
 

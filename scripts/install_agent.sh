@@ -302,6 +302,7 @@ else
     echo "Agent API: http://${SERVER_IP}:3000"
   fi
   echo "Browser UI: disabled on agent-only nodes"
+  echo "Next step: run 'sudo file-panel setup-agent' for interactive WireGuard onboarding"
 fi
 
 echo "Role: ${FILE_PANEL_ROLE}"
@@ -312,8 +313,14 @@ echo "Service user: ${SERVICE_USER}"
 if [[ -n "$WIREGUARD_IP_VALUE" ]]; then
   echo "WireGuard IP: ${WIREGUARD_IP_VALUE}"
 fi
-echo "WireGuard: wireguard-tools is installed; configure wg0 separately before using private node links"
-echo "Global command: file-panel start | file-panel restart | file-panel status | file-panel info | file-panel uninstall"
+echo "WireGuard: wireguard-tools is installed"
+if [[ "$FILE_PANEL_ROLE" == "manager" ]]; then
+  echo "WireGuard bootstrap: configure wg0 on the manager first, then generate one-time bootstrap commands from the Nodes view"
+else
+  echo "WireGuard onboarding: run 'sudo file-panel setup-agent' for the interactive wizard"
+  echo "Advanced mode: 'sudo file-panel bootstrap-wireguard --manager-url <manager-url> --bootstrap-token <token>'"
+fi
+echo "Global command: file-panel start | file-panel restart | file-panel status | file-panel info | file-panel setup-agent | file-panel uninstall"
 if [[ -n "$CERTBOT_EMAIL_VALUE" ]]; then
   echo "Certbot email: ${CERTBOT_EMAIL_VALUE}"
 fi

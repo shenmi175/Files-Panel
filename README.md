@@ -140,7 +140,55 @@ python -m app.agent_main
 
 - [ARCHITECTURE.md](ARCHITECTURE.md)
 - [WIREGUARD.md](WIREGUARD.md)
+- [AGENT_ONBOARDING.md](AGENT_ONBOARDING.md)
+- [WIREGUARD_BOOTSTRAP.md](WIREGUARD_BOOTSTRAP.md)
 - [USAGE.md](USAGE.md)
 - [DEVELOPMENT.md](DEVELOPMENT.md)
 - [API.md](API.md)
 - [CONCEPTS.md](CONCEPTS.md)
+
+## Recommended Onboarding Flow
+
+The recommended flow is now:
+
+1. Keep the manager host as `manager` only.
+2. Install `agent-only` on the target host.
+3. Run the interactive wizard on the target host:
+
+```bash
+sudo file-panel setup-agent
+```
+
+4. Follow the CLI questions to configure `wg0`.
+5. After it prints the target `WireGuard IP` and `AGENT_TOKEN`, go back to the manager UI and add the node manually.
+
+See [AGENT_ONBOARDING.md](AGENT_ONBOARDING.md) for the full step-by-step guide.
+
+## Advanced WireGuard Bootstrap Flow
+
+This repository now supports a guided manager -> agent bootstrap flow.
+
+1. Install the manager on the control host and make sure `wg0` is already configured there.
+2. Open the manager UI and go to the `Nodes` view.
+3. In `WireGuard 引导接入`, enter:
+   - manager public URL
+   - WireGuard endpoint host or public IP
+   - optional node name
+   - token expiry
+4. Generate the one-time bootstrap command and copy it.
+5. On the target host, inside the project directory, run:
+
+```bash
+sudo bash scripts/install_agent_only.sh
+sudo file-panel bootstrap-wireguard --manager-url <manager-url> --bootstrap-token <token>
+```
+
+After the second command succeeds, the agent will:
+
+- generate its own WireGuard keypair
+- request an IP from the manager
+- write `/etc/wireguard/wg0.conf`
+- start `wg-quick@wg0`
+- register itself into the manager node directory automatically
+
+The bootstrap token is single-use and expires automatically.

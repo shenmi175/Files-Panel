@@ -34,6 +34,8 @@ export const state = {
   accessLoaded: false,
   configLoaded: false,
   serversLoaded: false,
+  wireguardBootstrapLoaded: false,
+  wireguardBootstrapStatus: null,
   logsLoaded: false,
   logsCursor: null,
   logLines: [],
@@ -41,6 +43,83 @@ export const state = {
   servers: [],
   preloadStarted: false,
 };
+
+function ensureWireguardBootstrapPanel() {
+  const nodesView = document.getElementById("nodes-view");
+  const nodesGrid = nodesView?.querySelector(".nodes-grid");
+  if (!nodesGrid || document.getElementById("wireguard-bootstrap-form")) {
+    return;
+  }
+
+  const panel = document.createElement("article");
+  panel.className = "panel section-panel wireguard-bootstrap-panel span-full";
+  panel.innerHTML = `
+    <div class="section-head">
+      <div>
+        <p class="section-kicker">Bootstrap</p>
+        <h2>WireGuard 接入指引</h2>
+        <p class="muted">推荐做法：在目标主机运行 <code>sudo file-panel setup-agent</code>，按问答向导完成后，再回到上面的节点表单填写 WireGuard IP 和 Agent Token。</p>
+      </div>
+    </div>
+    <div class="wireguard-bootstrap-status-grid">
+      <span id="wireguard-bootstrap-summary" class="ghost-chip">正在读取 manager WireGuard 状态...</span>
+      <p id="wireguard-bootstrap-status" class="muted">
+        先确认 manager 上的 wg0 已经配置并启动。下方是高级自动接入模式；如果你只想手动添加节点，可以直接在目标主机运行 setup-agent。
+      </p>
+    </div>
+    <form id="wireguard-bootstrap-form" class="settings-form">
+      <label class="field">
+        <span>Manager URL</span>
+        <input
+          id="wireguard-bootstrap-manager-url"
+          spellcheck="false"
+          placeholder="https://panel.example.com"
+        />
+      </label>
+      <label class="field">
+        <span>WireGuard Endpoint Host</span>
+        <input
+          id="wireguard-bootstrap-endpoint-host"
+          spellcheck="false"
+          placeholder="panel.example.com"
+        />
+      </label>
+      <label class="field">
+        <span>目标节点名称</span>
+        <input
+          id="wireguard-bootstrap-node-name"
+          spellcheck="false"
+          placeholder="la-node-01"
+        />
+      </label>
+      <label class="field">
+        <span>命令有效期</span>
+        <select id="wireguard-bootstrap-expiry">
+          <option value="15">15 分钟</option>
+          <option value="20" selected>20 分钟</option>
+          <option value="30">30 分钟</option>
+          <option value="60">60 分钟</option>
+        </select>
+      </label>
+      <label class="field span-2">
+        <span>目标主机执行命令</span>
+        <textarea
+          id="wireguard-bootstrap-command"
+          rows="5"
+          readonly
+          placeholder="先生成引导命令，然后复制到目标主机执行。"
+        ></textarea>
+      </label>
+      <div class="form-actions span-2">
+        <button id="generate-wireguard-bootstrap" type="submit">生成引导命令</button>
+        <button id="copy-wireguard-bootstrap" type="button" class="secondary" disabled>复制命令</button>
+      </div>
+    </form>
+  `;
+  nodesGrid.appendChild(panel);
+}
+
+ensureWireguardBootstrapPanel();
 
 export const dom = {
   appShell: document.getElementById("app-shell"),
@@ -96,6 +175,16 @@ export const dom = {
   resetServerFormButton: document.getElementById("reset-server-form"),
   serversSummaryEl: document.getElementById("servers-summary"),
   serversListEl: document.getElementById("servers-list"),
+  wireguardBootstrapSummaryEl: document.getElementById("wireguard-bootstrap-summary"),
+  wireguardBootstrapStatusEl: document.getElementById("wireguard-bootstrap-status"),
+  wireguardBootstrapForm: document.getElementById("wireguard-bootstrap-form"),
+  wireguardBootstrapManagerUrlInput: document.getElementById("wireguard-bootstrap-manager-url"),
+  wireguardBootstrapEndpointHostInput: document.getElementById("wireguard-bootstrap-endpoint-host"),
+  wireguardBootstrapNodeNameInput: document.getElementById("wireguard-bootstrap-node-name"),
+  wireguardBootstrapExpiryInput: document.getElementById("wireguard-bootstrap-expiry"),
+  wireguardBootstrapCommandInput: document.getElementById("wireguard-bootstrap-command"),
+  generateWireguardBootstrapButton: document.getElementById("generate-wireguard-bootstrap"),
+  copyWireguardBootstrapButton: document.getElementById("copy-wireguard-bootstrap"),
   filesEl: document.getElementById("files"),
   activePathLabel: document.getElementById("active-path"),
   pathBreadcrumbsEl: document.getElementById("path-breadcrumbs"),
@@ -174,7 +263,7 @@ export async function request(path, options = {}) {
   let requestPath = path;
   if (Number.isInteger(state.selectedServerId) && typeof path === "string" && path.startsWith("/api/")) {
     const url = new URL(path, window.location.origin);
-    const excludedPrefixes = ["/api/auth", "/api/servers"];
+    const excludedPrefixes = ["/api/auth", "/api/servers", "/api/bootstrap"];
     const excludedPaths = new Set(["/api/health"]);
     const isExcluded = excludedPaths.has(url.pathname)
       || excludedPrefixes.some((prefix) => url.pathname.startsWith(prefix));
@@ -452,6 +541,21 @@ export function setServersPlaceholder(message) {
   dom.serversListEl.textContent = message;
 }
 
+export function setWireguardBootstrapPlaceholder(message) {
+  if (dom.wireguardBootstrapSummaryEl) {
+    dom.wireguardBootstrapSummaryEl.textContent = message;
+  }
+  if (dom.wireguardBootstrapStatusEl) {
+    dom.wireguardBootstrapStatusEl.textContent = message;
+  }
+  if (dom.wireguardBootstrapCommandInput) {
+    dom.wireguardBootstrapCommandInput.value = "";
+  }
+  if (dom.copyWireguardBootstrapButton) {
+    dom.copyWireguardBootstrapButton.disabled = true;
+  }
+}
+
 export function clearProtectedViews(message) {
   setResourcesPlaceholder(message);
   setChartPlaceholder(message);
@@ -459,5 +563,6 @@ export function clearProtectedViews(message) {
   setAccessPlaceholder(message);
   setConfigPlaceholder(message);
   setServersPlaceholder(message);
+  setWireguardBootstrapPlaceholder(message);
   setLogsPlaceholder(message);
 }

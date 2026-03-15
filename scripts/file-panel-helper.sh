@@ -15,6 +15,7 @@ read_env_value() {
 
 DOMAIN_RE='^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$'
 SERVICE_RE='^[A-Za-z0-9@._-]+$'
+WG_IFACE_RE='^[A-Za-z0-9_.-]+$'
 SENSITIVE_DIRS=(".ssh" ".gnupg" ".pki" ".aws" ".kube")
 SENSITIVE_FILES=("id_rsa" "id_ed25519" "id_dsa" "id_ecdsa" "authorized_keys" "known_hosts")
 
@@ -252,6 +253,72 @@ restart_agent() {
   systemctl restart "$AGENT_SERVICE_NAME"
 }
 
+require_wireguard_interface() {
+  local interface_name="$1"
+  if [[ ! "$interface_name" =~ $WG_IFACE_RE ]]; then
+    echo "invalid wireguard interface: $interface_name" >&2
+    exit 2
+  fi
+}
+
+wireguard_status() {
+  local interface_name="${1:-wg0}"
+  require_wireguard_interface "$interface_name"
+  if ! command -v wg >/dev/null 2>&1 || ! command -v ip >/dev/null 2>&1; then
+    echo "wireguard-tools is not installed" >&2
+    exit 2
+  fi
+
+  local public_key listen_port address
+  public_key="$(wg show "$interface_name" public-key 2>/dev/null || true)"
+  if [[ -z "$public_key" ]]; then
+    exit 4
+  fi
+
+  listen_port="$(wg show "$interface_name" listen-port 2>/dev/null || true)"
+  address="$(ip -4 -o addr show "$interface_name" 2>/dev/null | awk '{print $4}' | head -n 1)"
+  printf '{"interface":"%s","public_key":"%s","listen_port":%s,"address":"%s"}\n' \
+    "$interface_name" \
+    "$public_key" \
+    "${listen_port:-0}" \
+    "$address"
+}
+
+replace_wireguard_config_stdin() {
+  local interface_name="${1:-wg0}"
+  require_wireguard_interface "$interface_name"
+  install -d -m 700 /etc/wireguard
+  cat >"/etc/wireguard/${interface_name}.conf"
+  chmod 600 "/etc/wireguard/${interface_name}.conf"
+}
+
+enable_wireguard() {
+  local interface_name="${1:-wg0}"
+  require_wireguard_interface "$interface_name"
+  systemctl enable --now "wg-quick@${interface_name}"
+}
+
+wireguard_add_peer() {
+  local interface_name="${1:-wg0}"
+  local public_key="${2:-}"
+  local allowed_ip="${3:-}"
+  local keepalive="${4:-25}"
+  require_wireguard_interface "$interface_name"
+  if [[ -z "$public_key" || -z "$allowed_ip" ]]; then
+    echo "wireguard peer public key and allowed IP are required" >&2
+    exit 2
+  fi
+  if ! command -v wg >/dev/null 2>&1; then
+    echo "wireguard-tools is not installed" >&2
+    exit 2
+  fi
+
+  wg set "$interface_name" peer "$public_key" allowed-ips "$allowed_ip" persistent-keepalive "$keepalive"
+  if command -v wg-quick >/dev/null 2>&1; then
+    wg-quick save "$interface_name" >/dev/null 2>&1 || true
+  fi
+}
+
 issue_cert() {
   local domain="$1"
   local email="${2:-}"
@@ -317,6 +384,18 @@ case "$command" in
     ;;
   restart-agent)
     restart_agent
+    ;;
+  wireguard-status)
+    wireguard_status "${1:-wg0}"
+    ;;
+  replace-wireguard-config-stdin)
+    replace_wireguard_config_stdin "${1:-wg0}"
+    ;;
+  enable-wireguard)
+    enable_wireguard "${1:-wg0}"
+    ;;
+  wireguard-add-peer)
+    wireguard_add_peer "${1:-wg0}" "${2:-}" "${3:-}" "${4:-25}"
     ;;
   issue-cert)
     issue_cert "${1:-}" "${2:-}"

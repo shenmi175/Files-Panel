@@ -8,6 +8,7 @@ from app.core.settings import SETTINGS, STATIC_DIR
 from app.routes import (
     access_router,
     auth_router,
+    bootstrap_router,
     files_router,
     resources_router,
     runtime_router,
@@ -22,6 +23,7 @@ def create_app() -> FastAPI:
     application = FastAPI(title="File Panel Manager", version="1.0.0")
     application.include_router(system_router)
     application.include_router(auth_router)
+    application.include_router(bootstrap_router)
     application.include_router(access_router)
     application.include_router(resources_router)
     application.include_router(runtime_router)

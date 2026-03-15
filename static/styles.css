@@ -42,7 +42,8 @@ code {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -78,7 +79,8 @@ button.danger {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -90,7 +92,8 @@ select {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   border-color: rgba(29, 92, 77, 0.45);
   box-shadow: 0 0 0 3px rgba(29, 92, 77, 0.08);
 }
@@ -1152,6 +1155,10 @@ h3 {
   grid-column: 1 / -1;
 }
 
+.span-full {
+  grid-column: 1 / -1;
+}
+
 .card-toggle {
   min-height: 54px;
   justify-content: flex-start;
@@ -1165,6 +1172,23 @@ h3 {
   margin-top: 18px;
   display: grid;
   gap: 12px;
+}
+
+.wireguard-bootstrap-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.wireguard-bootstrap-status-grid {
+  display: grid;
+  gap: 10px;
+}
+
+#wireguard-bootstrap-command {
+  min-height: 132px;
+  resize: vertical;
+  font-family: "IBM Plex Mono", "Noto Sans Mono CJK SC", monospace;
+  line-height: 1.5;
 }
 
 .server-row {

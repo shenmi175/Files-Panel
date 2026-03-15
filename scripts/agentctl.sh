@@ -11,6 +11,8 @@ DEFAULT_LOG_LINES="${DEFAULT_LOG_LINES:-80}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALLED_PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 UNINSTALL_SCRIPT="$SCRIPT_DIR/uninstall_agent.sh"
+BOOTSTRAP_SCRIPT="$SCRIPT_DIR/bootstrap_wireguard.py"
+SETUP_AGENT_SCRIPT="$SCRIPT_DIR/setup_agent_interactive.py"
 
 read_env_value() {
   local key="$1"
@@ -309,6 +311,44 @@ uninstall_panel() {
   bash "$UNINSTALL_SCRIPT"
 }
 
+bootstrap_wireguard() {
+  local role python_bin
+  role="$(service_role)"
+  if [[ "$role" != "agent" ]]; then
+    echo "bootstrap-wireguard is only available on agent-only nodes" >&2
+    exit 1
+  fi
+  python_bin="$INSTALLED_PROJECT_DIR/.venv/bin/python"
+  if [[ ! -x "$python_bin" ]]; then
+    echo "Python runtime not found: $python_bin" >&2
+    exit 1
+  fi
+  if [[ ! -f "$BOOTSTRAP_SCRIPT" ]]; then
+    echo "Bootstrap script not found: $BOOTSTRAP_SCRIPT" >&2
+    exit 1
+  fi
+  "$python_bin" "$BOOTSTRAP_SCRIPT" "$@"
+}
+
+setup_agent() {
+  local role python_bin
+  role="$(service_role)"
+  if [[ "$role" != "agent" ]]; then
+    echo "setup-agent is only available on agent-only nodes" >&2
+    exit 1
+  fi
+  python_bin="$INSTALLED_PROJECT_DIR/.venv/bin/python"
+  if [[ ! -x "$python_bin" ]]; then
+    echo "Python runtime not found: $python_bin" >&2
+    exit 1
+  fi
+  if [[ ! -f "$SETUP_AGENT_SCRIPT" ]]; then
+    echo "Setup script not found: $SETUP_AGENT_SCRIPT" >&2
+    exit 1
+  fi
+  "$python_bin" "$SETUP_AGENT_SCRIPT" "$@"
+}
+
 show_help() {
   cat <<'EOF'
 Usage:
@@ -323,6 +363,10 @@ Commands:
   info          Show role, URL, WireGuard IP and AGENT_TOKEN
   grant-access  Grant file access to filepanel for a directory; defaults to AGENT_ROOT
   revoke-access Revoke filepanel ACL access from a directory
+  setup-agent
+               Interactive WireGuard setup for agent-only nodes; prints WireGuard IP and AGENT_TOKEN for manual node add
+  bootstrap-wireguard
+               Advanced mode: register this agent with the manager and auto-configure wg0
   uninstall     Uninstall File Panel and remove SQLite data
   full-install  Install dependencies, sync code and restart the current role
   redeploy      Sync code and Python dependencies, then restart the current role
@@ -390,6 +434,14 @@ case "$command" in
   revoke-access)
     ensure_root "$command" "$@"
     revoke_access "${1:-}"
+    ;;
+  setup-agent)
+    ensure_root "$command" "$@"
+    setup_agent "$@"
+    ;;
+  bootstrap-wireguard)
+    ensure_root "$command" "$@"
+    bootstrap_wireguard "$@"
     ;;
   uninstall)
     ensure_root "$command" "$@"
