@@ -468,10 +468,11 @@ def download_file(path: str, *, browse_mode: str | None = None) -> FileResponse 
             timeout_seconds=120,
         )
         media_type, _ = mimetypes.guess_type(target.name)
+        safe_name = target.name.replace('"', "")
         return Response(
             content=content,
             media_type=media_type or "application/octet-stream",
-            headers={"Content-Disposition": f'attachment; filename="{target.name.replace("\"", "")}"'},
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
         )
 
     target = resolve_existing_file(path)
