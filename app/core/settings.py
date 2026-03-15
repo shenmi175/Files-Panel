@@ -24,6 +24,7 @@ DOMAIN_PATTERN = re.compile(
 
 @dataclass(frozen=True)
 class Settings:
+    role: str
     host: str
     port: int
     agent_name: str
@@ -74,6 +75,10 @@ def load_settings() -> Settings:
     )
     persisted = load_config_values()
 
+    role = os.getenv("FILE_PANEL_ROLE", "manager").strip().lower() or "manager"
+    if role not in {"manager", "agent"}:
+        role = "manager"
+
     host = persisted.get("HOST", os.getenv("HOST", "127.0.0.1")).strip() or "127.0.0.1"
     port = int(persisted.get("PORT", os.getenv("PORT", "3000")))
     root_path = Path(
@@ -91,6 +96,7 @@ def load_settings() -> Settings:
         "no",
     }
     return Settings(
+        role=role,
         host=host,
         port=port,
         agent_name=persisted.get("AGENT_NAME", os.getenv("AGENT_NAME", socket.gethostname())).strip()

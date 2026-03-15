@@ -1,5 +1,5 @@
 [Unit]
-Description=File Panel Manager
+Description=File Panel Agent
 After=network-online.target
 Wants=network-online.target
 
@@ -9,7 +9,7 @@ User=filepanel
 Group=filepanel
 WorkingDirectory=/opt/files-agent
 EnvironmentFile=/etc/files-agent/files-agent.env
-ExecStart=/opt/files-agent/.venv/bin/python -m app.manager_main
+ExecStart=/opt/files-agent/.venv/bin/python -m app.agent_main
 Restart=on-failure
 RestartSec=3
 PrivateTmp=true

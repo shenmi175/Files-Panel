@@ -1,61 +1,71 @@
 # File Panel
 
-`File Panel` 是一个部署在 Ubuntu/Linux 目标机器上的单机 agent 面板。
+`File Panel` 现在拆成两种运行角色：
 
-当前版本由同一个 FastAPI 服务同时提供：
+- `manager`：部署在管理机，提供浏览器控制面板、管理员账号密码登录、节点目录和远端代理。
+- `agent`：部署在目标主机，只暴露本机 API，不挂前端控制面板，使用 `AGENT_TOKEN` 给 manager 校验和代理访问。
 
-- 本机资源概览与历史趋势
-- 本机文件工作区
-- 本机 Docker / systemd 日志查看
-- 本机接入配置
-- 远程节点目录登记
+这意味着后续接更多服务器时，不需要在目标主机上再跑完整控制面板，只需要部署 `agent-only`。
 
-## 当前架构
+## 当前能力
 
-- 前端静态资源位于 `static/`
-- 后端 API 位于 `app/`
-- 浏览器登录使用本地管理员账号密码
-- `AGENT_TOKEN` 不再用于浏览器登录，只用于节点验证、外部校验和签名下载
-
-这意味着当前项目仍然是“每台机器一个 agent”的模式，而不是已经完成的多节点 manager。
-
-## 核心能力
-
-- 资源采集：CPU、内存、磁盘、负载、网络、磁盘 I/O、Docker 概览
-- 历史趋势：样本写入 SQLite，支持 `15m / 1h / 6h / 24h / 7d`
-- 文件操作：浏览、上传、下载、删除、重命名、建目录
-- 接入配置：监听、域名、HTTPS、运行配置
-- 节点目录：保存远程节点 URL、WireGuard 地址、节点 Token
-- 日志查看：systemd 运行日志分级过滤
+- 本机资源采集：CPU、内存、磁盘、负载、网络、磁盘 I/O、Docker
+- 历史持久化：资源样本写入 SQLite，支持时间范围查看
+- 本机文件交互：浏览、上传、下载、删除、重命名、建目录
+- 本机运行时查看：Docker 状态、systemd 日志
+- 本机接入配置：监听、域名、HTTPS、运行参数
+- 节点目录：保存远程节点 URL、WireGuard IP、`AGENT_TOKEN`
+- 远程切换查看：manager 通过节点目录代理到远端 agent
 
 ## 认证模型
 
 ### 浏览器登录
 
-- 首次访问时注册一个本地管理员账号
+- 只在 `manager` 角色启用
+- 首次访问注册一个本地管理员账号
 - 之后使用账号密码登录
 - 服务端签发 `HttpOnly` 会话 Cookie
 
 ### Agent Token
 
-- `AGENT_TOKEN` 不是浏览器密码
-- 它用于节点接入、外部 API 校验和文件下载签名
-- 节点目录中录入的远程节点 Token 也是这个用途
+- `AGENT_TOKEN` 不再作为浏览器登录密码
+- 它只用于 manager 校验远端 agent、远程代理请求和签名下载
+- 节点目录里保存的远端节点 Token 就是这个值
 
 ## 安装
 
+### 管理机
+
 ```bash
-sudo bash scripts/install_agent.sh
+sudo bash scripts/install_manager.sh
 ```
 
-安装脚本会完成：
+管理机会安装：
 
-- Python 运行环境准备
-- `sqlite3` 安装
-- `wireguard-tools` 安装
-- `filepanel` 服务用户创建
-- SQLite 状态目录初始化
-- `file-panel` 控制命令安装
+- Python 运行环境
+- `sqlite3`
+- `wireguard-tools`
+- `nginx` / `certbot`
+- `filepanel` 服务用户
+- 全局命令 `file-panel`
+- `manager` systemd 入口
+
+### 目标主机 agent-only
+
+```bash
+sudo bash scripts/install_agent_only.sh
+```
+
+目标主机会安装：
+
+- Python 运行环境
+- `sqlite3`
+- `wireguard-tools`
+- `filepanel` 服务用户
+- 全局命令 `file-panel`
+- `agent-only` systemd 入口
+
+不会安装浏览器控制面板入口，也不会启用本地账号密码登录页。
 
 ## 常用命令
 
@@ -69,27 +79,68 @@ file-panel info
 file-panel uninstall
 ```
 
+`file-panel quick`、`file-panel redeploy`、`file-panel full-install` 会根据当前机器保存的 `FILE_PANEL_ROLE` 自动选择 manager 或 agent-only 安装链。
+
+## 接入更多服务器
+
+如果你要把另一台服务器接入当前 manager：
+
+1. 在目标主机部署 `agent-only`
+2. 记录该主机的 `AGENT_TOKEN`
+3. 配好 WireGuard，拿到目标主机的 `wg0` 地址
+4. 在 manager 的“节点”页录入：
+   - 节点名称
+   - WireGuard IP
+   - 可选 URL
+   - `AGENT_TOKEN`
+
+如果填写了 WireGuard IP，但不填 URL，manager 默认会按 `http://<wireguard-ip>:3000` 访问远端 agent。
+
+## WireGuard
+
+项目当前只负责安装 `wireguard-tools`，不会自动创建 peer、密钥或 `wg0` 隧道。
+
+推荐用法：
+
+- 管理机部署 `manager`
+- 每台目标主机部署 `agent-only`
+- manager 和 agent 通过 WireGuard 私网互通
+- 节点目录优先使用 `WireGuard IP + AGENT_TOKEN`
+
+具体示例见 [WIREGUARD.md](WIREGUARD.md)。
+
 ## 开发启动
+
+### manager
 
 ```bash
 python -m venv .venv
 .venv/bin/pip install -r requirements.txt
+FILE_PANEL_ROLE=manager \
 AGENT_ROOT=/srv/file-panel/data \
 STATE_DIR=/var/lib/files-agent \
 DATABASE_PATH=/var/lib/files-agent/file-panel.db \
-python -m app
+python -m app.manager_main
+```
+
+### agent-only
+
+```bash
+python -m venv .venv
+.venv/bin/pip install -r requirements.txt
+FILE_PANEL_ROLE=agent \
+HOST=0.0.0.0 \
+AGENT_ROOT=/srv/file-panel/data \
+STATE_DIR=/var/lib/files-agent \
+DATABASE_PATH=/var/lib/files-agent/file-panel.db \
+python -m app.agent_main
 ```
 
 ## 文档
 
 - [ARCHITECTURE.md](ARCHITECTURE.md)
+- [WIREGUARD.md](WIREGUARD.md)
 - [USAGE.md](USAGE.md)
 - [DEVELOPMENT.md](DEVELOPMENT.md)
 - [API.md](API.md)
 - [CONCEPTS.md](CONCEPTS.md)
-
-## 现阶段边界
-
-- 资源采集和文件交互都是本机真实能力，不是占位
-- 节点目录目前主要是登记簿，尚未完成真正的远程代理执行
-- WireGuard 当前只负责安装和地址预留，不负责自动组网编排

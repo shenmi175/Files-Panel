@@ -1,69 +1,110 @@
 # 项目架构
 
-## 当前定位
+## 角色拆分
 
-File Panel 当前是一个部署在目标 Linux 服务器上的单节点 agent。
+现在项目有两个明确入口：
 
-- 前端和后端一起由同一个进程提供
-- 所有资源采集和文件操作默认都作用于本机
-- 当前节点目录只负责登记远程节点，不负责远程代理执行
+- `app.manager_main`
+  - 部署在管理机
+  - 挂载静态前端
+  - 提供管理员账号密码登录
+  - 提供节点目录和远端代理
+- `app.agent_main`
+  - 部署在目标主机
+  - 不挂载静态前端
+  - 不提供浏览器登录页
+  - 只暴露本机 API，依赖 `AGENT_TOKEN` 给 manager 访问
 
-## 目录结构
+`app/main.py` 仍然保留为 manager 兼容入口。
+
+## 后端分层
 
 ```text
 app/
-  core/        配置、鉴权、SQLite
-  routes/      FastAPI 路由
-  services/    业务逻辑
-static/
-  index.html   页面骨架
-  js/          前端模块
-  styles.css   样式
-scripts/
-  install_agent.sh
-  uninstall_agent.sh
-  agentctl.sh
-systemd/
-  files-agent.service
+  agent_main.py      agent-only FastAPI 入口
+  manager_main.py    manager FastAPI 入口
+  core/
+    auth.py          会话与 AGENT_TOKEN 鉴权
+    settings.py      运行配置与角色加载
+    storage.py       SQLite 持久化
+  routes/
+    auth.py          仅 manager 使用
+    servers.py       仅 manager 使用
+    access.py        manager 本机 / 远端 agent 代理
+    resources.py     manager 本机 / 远端 agent 代理
+    runtime.py       manager 本机 / 远端 agent 代理
+    files.py         manager 本机 / 远端 agent 代理
+    system.py        健康检查与节点信息
+  services/
+    remote_nodes.py  manager 到远端 agent 的代理客户端
+    resources.py     本机资源采样
+    files.py         本机文件操作
+    runtime.py       本机 Docker 与日志
+    access.py        本机监听 / 域名 / 运行配置
 ```
 
-## 运行结构
+## 鉴权边界
 
-### 前端
+### manager
 
-- `static/index.html`：页面和视图容器
-- `static/js/app.js`：应用入口、切页、后台预热
-- `static/js/resources.js`：资源面板
-- `static/js/files.js`：文件工作区
-- `static/js/settings.js`：接入、配置、节点
-- `static/js/logs.js`：日志面板
+- 浏览器请求通过管理员账号密码登录
+- 会话保存在 `HttpOnly` Cookie
+- manager 前端只和 manager 本机 API 通信
 
-### 后端
+### agent-only
 
-- `app/main.py`：组装应用与静态资源
-- `app/routes/*.py`：API 入口
-- `app/services/*.py`：业务实现
-- `app/core/storage.py`：SQLite 配置和历史样本
-- `app/core/settings.py`：运行配置加载
+- 不接受浏览器登录
+- 不挂载前端静态页
+- 远端调用必须携带 `Authorization: Bearer <AGENT_TOKEN>`
 
-## 单机边界
+## 远端代理模型
 
-当前下列能力都直接依赖本机：
+manager 在节点目录中保存：
 
-- 资源采样：`psutil`
-- 文件管理：本机文件系统
-- Docker：本机 `docker.sock`
-- 日志：本机 `journalctl`
-- 接入：本机 `nginx` / `certbot`
+- 节点名称
+- `base_url`
+- `wireguard_ip`
+- `auth_token`
 
-因此现在的服务模型是“每台机器一个 agent”。
+切换节点后，manager 通过 `app/services/remote_nodes.py` 转发这些接口：
 
-## 多节点建议
+- `/api/agent`
+- `/api/access`
+- `/api/resources`
+- `/api/resources/history`
+- `/api/runtime/docker`
+- `/api/runtime/logs`
+- `/api/files/*`
 
-如果要管理 2-10 台服务器，建议采用：
+这样浏览器始终只连 manager，一个页面内即可切换不同节点。
 
-1. 每台服务器部署一个 agent
-2. 通过 WireGuard 打通管理平面网络
-3. 再增加一个 manager 层负责统一代理与展示
+## 部署模型
 
-不要直接把当前 agent 强行改成 SSH 中转面板，这会把本机执行模型和远程执行模型混在一起。
+### manager
+
+- systemd 单元：`systemd/files-agent.service`
+- Python 入口：`python -m app.manager_main`
+- 推荐部署在有固定公网入口或反代入口的管理机上
+
+### agent-only
+
+- systemd 单元模板：`systemd/files-agent-node.service`
+- Python 入口：`python -m app.agent_main`
+- 推荐只在 WireGuard 私网或受控内网中暴露 `3000`
+
+## WireGuard 建议
+
+推荐使用 hub-and-spoke：
+
+- manager：`10.66.0.1`
+- agent A：`10.66.0.2`
+- agent B：`10.66.0.3`
+
+manager 通过 WireGuard 地址访问 agent：
+
+```text
+http://10.66.0.2:3000
+http://10.66.0.3:3000
+```
+
+项目当前只负责安装 `wireguard-tools`，不负责编排 WireGuard peer、密钥、路由和隧道生命周期；这些由运维脚本或外部网络管理服务完成。

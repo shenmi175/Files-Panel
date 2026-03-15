@@ -24,7 +24,7 @@ read_env_value() {
 }
 
 if [[ "${EUID}" -ne 0 ]]; then
-  echo "请使用 root 运行卸载脚本" >&2
+  echo "Please run the uninstall script as root." >&2
   exit 1
 fi
 
@@ -66,6 +66,6 @@ if getent group "$SERVICE_GROUP" >/dev/null 2>&1; then
 fi
 
 echo
-echo "File Panel 已卸载"
-echo "已删除应用目录、环境文件、SQLite 数据、helper 和专用服务账户"
-echo "nginx/certbot/sqlite3/wireguard-tools 等系统软件包未自动卸载"
+echo "File Panel removed"
+echo "Application files, environment files, SQLite data, helper scripts and the service account were deleted."
+echo "System packages such as nginx, certbot, sqlite3 and wireguard-tools were not removed automatically."

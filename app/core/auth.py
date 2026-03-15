@@ -38,10 +38,12 @@ def _session_signature(payload: bytes, secret_key: bytes) -> bytes:
 
 
 def browser_auth_enabled() -> bool:
-    return True
+    return SETTINGS.role == "manager"
 
 
 def registration_required() -> bool:
+    if not browser_auth_enabled():
+        return False
     return load_admin_account() is None
 
 

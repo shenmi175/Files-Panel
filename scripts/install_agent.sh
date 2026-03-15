@@ -25,14 +25,28 @@ DEFAULT_PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROJECT_DIR="${PROJECT_DIR_OVERRIDE:-$DEFAULT_PROJECT_DIR}"
 INSTALL_SYSTEM_PACKAGES="${INSTALL_SYSTEM_PACKAGES:-1}"
 SYNC_PYTHON_DEPS="${SYNC_PYTHON_DEPS:-1}"
+FILE_PANEL_ROLE="${FILE_PANEL_ROLE_OVERRIDE:-manager}"
+INSTALL_WEB_STACK_PACKAGES="${INSTALL_WEB_STACK_PACKAGES:-1}"
+DEFAULT_BIND_HOST_OVERRIDE="${DEFAULT_BIND_HOST_OVERRIDE:-}"
+SERVICE_UNIT_FILE="${SERVICE_UNIT_FILE_OVERRIDE:-$PROJECT_DIR/systemd/$SERVICE_NAME.service}"
 
 if [[ "${EUID}" -ne 0 ]]; then
-  echo "请使用 root 运行安装脚本" >&2
+  echo "Please run the installer as root." >&2
+  exit 1
+fi
+
+if [[ "$FILE_PANEL_ROLE" != "manager" && "$FILE_PANEL_ROLE" != "agent" ]]; then
+  echo "Invalid FILE_PANEL_ROLE: $FILE_PANEL_ROLE" >&2
   exit 1
 fi
 
 if [[ ! -d "$PROJECT_DIR/app" || ! -d "$PROJECT_DIR/static" || ! -d "$PROJECT_DIR/scripts" ]]; then
-  echo "无效的源码目录: $PROJECT_DIR" >&2
+  echo "Invalid project directory: $PROJECT_DIR" >&2
+  exit 1
+fi
+
+if [[ ! -f "$SERVICE_UNIT_FILE" ]]; then
+  echo "Missing systemd unit file: $SERVICE_UNIT_FILE" >&2
   exit 1
 fi
 
@@ -44,64 +58,60 @@ append_group_if_exists() {
   fi
 }
 
-if [[ "$INSTALL_SYSTEM_PACKAGES" == "1" ]]; then
+install_system_packages() {
+  local base_packages=(
+    sudo
+    python3
+    python3-venv
+    python3-pip
+    sqlite3
+    wireguard-tools
+    acl
+  )
+  local web_packages=(
+    nginx
+    certbot
+    python3-certbot-nginx
+  )
+
+  if [[ "$INSTALL_SYSTEM_PACKAGES" != "1" ]]; then
+    return
+  fi
+
   apt-get update
-  apt-get install -y sudo python3 python3-venv python3-pip nginx certbot python3-certbot-nginx sqlite3 wireguard-tools acl
-fi
+  apt-get install -y "${base_packages[@]}"
+  if [[ "$INSTALL_WEB_STACK_PACKAGES" == "1" ]]; then
+    apt-get install -y "${web_packages[@]}"
+  fi
+}
 
-if ! getent group "$SERVICE_GROUP" >/dev/null 2>&1; then
-  groupadd --system "$SERVICE_GROUP"
-fi
+copy_project_files() {
+  install -d -m 755 "$APP_DIR"
+  rm -rf "$APP_DIR/app" "$APP_DIR/static" "$APP_DIR/scripts"
+  rm -f \
+    "$APP_DIR/README.md" \
+    "$APP_DIR/ARCHITECTURE.md" \
+    "$APP_DIR/WIREGUARD.md" \
+    "$APP_DIR/requirements.txt" \
+    "$APP_DIR/.env.example"
 
-if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
-  useradd \
-    --system \
-    --gid "$SERVICE_GROUP" \
-    --home-dir "$STATE_DIR" \
-    --shell /usr/sbin/nologin \
-    --no-create-home \
-    "$SERVICE_USER"
-fi
+  cp -a "$PROJECT_DIR/app" "$APP_DIR/"
+  cp -a "$PROJECT_DIR/static" "$APP_DIR/"
+  cp -a "$PROJECT_DIR/scripts" "$APP_DIR/"
 
-append_group_if_exists "$SERVICE_USER" "systemd-journal"
-append_group_if_exists "$SERVICE_USER" "adm"
-append_group_if_exists "$SERVICE_USER" "docker"
+  for doc_name in README.md ARCHITECTURE.md WIREGUARD.md requirements.txt .env.example; do
+    if [[ -f "$PROJECT_DIR/$doc_name" ]]; then
+      cp -a "$PROJECT_DIR/$doc_name" "$APP_DIR/"
+    fi
+  done
 
-install -d -m 755 "$APP_DIR"
-install -d -m 750 -o root -g "$SERVICE_GROUP" "$ENV_DIR"
-install -d -m 750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$STATE_DIR"
-install -d -m 750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$AGENT_ROOT_BASE"
-install -d -m 750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$DEFAULT_AGENT_ROOT"
-install -d -m 755 "$HELPER_INSTALL_DIR"
-chown -R "$SERVICE_USER":"$SERVICE_GROUP" "$STATE_DIR"
-chown -R "$SERVICE_USER":"$SERVICE_GROUP" "$AGENT_ROOT_BASE"
+  cp -a "$SERVICE_UNIT_FILE" "/etc/systemd/system/$SERVICE_NAME.service"
+  install -o root -g root -m 755 "$PROJECT_DIR/scripts/file-panel" "$GLOBAL_COMMAND_PATH"
+  install -o root -g root -m 755 "$PROJECT_DIR/scripts/file-panel-helper.sh" "$HELPER_INSTALL_PATH"
 
-cp -a "$PROJECT_DIR/app" "$APP_DIR/"
-cp -a "$PROJECT_DIR/static" "$APP_DIR/"
-cp -a "$PROJECT_DIR/scripts" "$APP_DIR/"
-cp -a "$PROJECT_DIR/README.md" "$APP_DIR/"
-cp -a "$PROJECT_DIR/requirements.txt" "$APP_DIR/"
-cp -a "$PROJECT_DIR/.env.example" "$APP_DIR/"
-cp -a "$PROJECT_DIR/systemd/$SERVICE_NAME.service" "/etc/systemd/system/$SERVICE_NAME.service"
-install -o root -g root -m 755 "$PROJECT_DIR/scripts/file-panel" "$GLOBAL_COMMAND_PATH"
-install -o root -g root -m 755 "$PROJECT_DIR/scripts/file-panel-helper.sh" "$HELPER_INSTALL_PATH"
-
-chown -R root:root "$APP_DIR"
-chmod -R a+rX "$APP_DIR"
-
-cat >"$SUDOERS_FILE" <<EOF
-Defaults:${SERVICE_USER} !requiretty
-${SERVICE_USER} ALL=(root) NOPASSWD: ${HELPER_INSTALL_PATH} *
-EOF
-chmod 440 "$SUDOERS_FILE"
-
-if [[ ! -x "$APP_DIR/.venv/bin/python" ]]; then
-  python3 -m venv "$APP_DIR/.venv"
-fi
-
-if [[ "$SYNC_PYTHON_DEPS" == "1" ]]; then
-  "$APP_DIR/.venv/bin/pip" install -r "$APP_DIR/requirements.txt"
-fi
+  chown -R root:root "$APP_DIR"
+  chmod -R a+rX "$APP_DIR"
+}
 
 read_env_value() {
   local key="$1"
@@ -140,6 +150,57 @@ read_config_value() {
   read_env_value "$key"
 }
 
+wireguard_ip() {
+  if ! command -v ip >/dev/null 2>&1; then
+    return 0
+  fi
+  ip -4 -o addr show wg0 2>/dev/null | awk '{print $4}' | cut -d/ -f1
+}
+
+install_system_packages
+
+if ! getent group "$SERVICE_GROUP" >/dev/null 2>&1; then
+  groupadd --system "$SERVICE_GROUP"
+fi
+
+if ! id -u "$SERVICE_USER" >/dev/null 2>&1; then
+  useradd \
+    --system \
+    --gid "$SERVICE_GROUP" \
+    --home-dir "$STATE_DIR" \
+    --shell /usr/sbin/nologin \
+    --no-create-home \
+    "$SERVICE_USER"
+fi
+
+append_group_if_exists "$SERVICE_USER" "systemd-journal"
+append_group_if_exists "$SERVICE_USER" "adm"
+append_group_if_exists "$SERVICE_USER" "docker"
+
+install -d -m 750 -o root -g "$SERVICE_GROUP" "$ENV_DIR"
+install -d -m 750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$STATE_DIR"
+install -d -m 750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$AGENT_ROOT_BASE"
+install -d -m 750 -o "$SERVICE_USER" -g "$SERVICE_GROUP" "$DEFAULT_AGENT_ROOT"
+install -d -m 755 "$HELPER_INSTALL_DIR"
+chown -R "$SERVICE_USER":"$SERVICE_GROUP" "$STATE_DIR"
+chown -R "$SERVICE_USER":"$SERVICE_GROUP" "$AGENT_ROOT_BASE"
+
+copy_project_files
+
+cat >"$SUDOERS_FILE" <<EOF
+Defaults:${SERVICE_USER} !requiretty
+${SERVICE_USER} ALL=(root) NOPASSWD: ${HELPER_INSTALL_PATH} *
+EOF
+chmod 440 "$SUDOERS_FILE"
+
+if [[ ! -x "$APP_DIR/.venv/bin/python" ]]; then
+  python3 -m venv "$APP_DIR/.venv"
+fi
+
+if [[ "$SYNC_PYTHON_DEPS" == "1" ]]; then
+  "$APP_DIR/.venv/bin/pip" install -r "$APP_DIR/requirements.txt"
+fi
+
 TOKEN="$(read_config_value AGENT_TOKEN)"
 if [[ -z "$TOKEN" ]]; then
   TOKEN="$("$APP_DIR/.venv/bin/python" "$APP_DIR/scripts/generate_token.py")"
@@ -157,16 +218,19 @@ fi
 
 SAMPLE_INTERVAL_VALUE="$(read_config_value RESOURCE_SAMPLE_INTERVAL)"
 if [[ -z "$SAMPLE_INTERVAL_VALUE" ]]; then
-  SAMPLE_INTERVAL_VALUE="15"
+  SAMPLE_INTERVAL_VALUE="5"
 fi
 
 PUBLIC_DOMAIN_VALUE="$(read_access_value domain)"
 if [[ -z "$PUBLIC_DOMAIN_VALUE" ]]; then
   PUBLIC_DOMAIN_VALUE="$(read_env_value PUBLIC_DOMAIN)"
 fi
+
 CERTBOT_EMAIL_VALUE="$(read_config_value CERTBOT_EMAIL)"
 HOST_VALUE="0.0.0.0"
-if [[ -n "$PUBLIC_DOMAIN_VALUE" ]]; then
+if [[ -n "$DEFAULT_BIND_HOST_OVERRIDE" ]]; then
+  HOST_VALUE="$DEFAULT_BIND_HOST_OVERRIDE"
+elif [[ "$FILE_PANEL_ROLE" == "manager" && -n "$PUBLIC_DOMAIN_VALUE" ]]; then
   HOST_VALUE="127.0.0.1"
 fi
 
@@ -179,12 +243,13 @@ fi
 
 if [[ -d "$ROOT_VALUE" ]]; then
   if ! "$HELPER_INSTALL_PATH" grant-path-access "$ROOT_VALUE"; then
-    echo "跳过自动授权: ${ROOT_VALUE}" >&2
+    echo "Skipping automatic access grant for protected path: $ROOT_VALUE" >&2
   fi
 fi
 
 cat >"$ENV_FILE" <<EOF
 # Managed by File Panel installer
+FILE_PANEL_ROLE=$FILE_PANEL_ROLE
 HOST=$HOST_VALUE
 PORT=3000
 AGENT_NAME=$AGENT_NAME_VALUE
@@ -211,23 +276,47 @@ chown root:"$SERVICE_GROUP" "$ENV_FILE"
 chmod 640 "$ENV_FILE"
 
 systemctl daemon-reload
-systemctl enable --now "$NGINX_SERVICE_NAME"
+if [[ "$FILE_PANEL_ROLE" == "manager" ]] && systemctl list-unit-files | grep -q "^${NGINX_SERVICE_NAME}.service"; then
+  systemctl enable --now "$NGINX_SERVICE_NAME"
+fi
 systemctl enable --now "$SERVICE_NAME"
 
 SERVER_IP="$(hostname -I | awk '{print $1}')"
+WIREGUARD_IP_VALUE="$(wireguard_ip)"
 
 echo
-echo "File Panel 安装完成"
-echo "临时访问地址: http://${SERVER_IP}:3000"
+if [[ "$FILE_PANEL_ROLE" == "manager" ]]; then
+  echo "File Panel manager installed"
+  if [[ -n "$PUBLIC_DOMAIN_VALUE" ]]; then
+    echo "Manager URL: https://${PUBLIC_DOMAIN_VALUE}"
+  elif [[ "$HOST_VALUE" == "127.0.0.1" || "$HOST_VALUE" == "::1" || "$HOST_VALUE" == "localhost" ]]; then
+    echo "Manager URL: http://127.0.0.1:3000"
+  else
+    echo "Manager URL: http://${SERVER_IP}:3000"
+  fi
+else
+  echo "File Panel agent installed"
+  if [[ "$HOST_VALUE" == "127.0.0.1" || "$HOST_VALUE" == "::1" || "$HOST_VALUE" == "localhost" ]]; then
+    echo "Agent API: http://127.0.0.1:3000"
+  else
+    echo "Agent API: http://${SERVER_IP}:3000"
+  fi
+  echo "Browser UI: disabled on agent-only nodes"
+fi
+
+echo "Role: ${FILE_PANEL_ROLE}"
 echo "AGENT_TOKEN: ${TOKEN}"
-echo "SQLite 数据库: ${DATABASE_PATH}"
-echo "默认文件根目录: ${ROOT_VALUE}"
-echo "服务用户: ${SERVICE_USER}"
-echo "WireGuard: 已安装 wireguard-tools，可用于后续节点互联"
-echo "全局命令: file-panel start | file-panel restart | file-panel status | file-panel uninstall"
+echo "SQLite: ${DATABASE_PATH}"
+echo "Default file root: ${ROOT_VALUE}"
+echo "Service user: ${SERVICE_USER}"
+if [[ -n "$WIREGUARD_IP_VALUE" ]]; then
+  echo "WireGuard IP: ${WIREGUARD_IP_VALUE}"
+fi
+echo "WireGuard: wireguard-tools is installed; configure wg0 separately before using private node links"
+echo "Global command: file-panel start | file-panel restart | file-panel status | file-panel info | file-panel uninstall"
 if [[ -n "$CERTBOT_EMAIL_VALUE" ]]; then
-  echo "Certbot 邮箱: ${CERTBOT_EMAIL_VALUE}"
+  echo "Certbot email: ${CERTBOT_EMAIL_VALUE}"
 fi
 if [[ -n "$PUBLIC_DOMAIN_VALUE" ]]; then
-  echo "已保留现有域名配置: https://${PUBLIC_DOMAIN_VALUE}"
+  echo "Existing domain preserved: https://${PUBLIC_DOMAIN_VALUE}"
 fi

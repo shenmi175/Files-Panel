@@ -10,7 +10,6 @@ DEFAULT_LOG_LINES="${DEFAULT_LOG_LINES:-80}"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 INSTALLED_PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-INSTALL_SCRIPT="$SCRIPT_DIR/install_agent.sh"
 UNINSTALL_SCRIPT="$SCRIPT_DIR/uninstall_agent.sh"
 
 read_env_value() {
@@ -19,6 +18,15 @@ read_env_value() {
     return 0
   fi
   grep -E "^${key}=" "$ENV_FILE" | tail -n 1 | cut -d "=" -f 2- || true
+}
+
+service_role() {
+  local role
+  role="$(read_env_value FILE_PANEL_ROLE)"
+  if [[ -z "$role" ]]; then
+    role="manager"
+  fi
+  printf '%s\n' "$role"
 }
 
 database_path() {
@@ -65,6 +73,13 @@ read_access_value() {
 
 server_ip() {
   hostname -I | awk '{print $1}'
+}
+
+wireguard_ip() {
+  if ! command -v ip >/dev/null 2>&1; then
+    return 0
+  fi
+  ip -4 -o addr show wg0 2>/dev/null | awk '{print $4}' | cut -d/ -f1
 }
 
 bind_host() {
@@ -115,6 +130,22 @@ resolve_source_project_dir() {
   )
 }
 
+resolve_install_script() {
+  local role candidate
+  role="$(service_role)"
+  if [[ "$role" == "agent" ]]; then
+    candidate="$SCRIPT_DIR/install_agent_only.sh"
+  else
+    candidate="$SCRIPT_DIR/install_manager.sh"
+  fi
+
+  if [[ -f "$candidate" ]]; then
+    printf '%s\n' "$candidate"
+    return
+  fi
+  printf '%s\n' "$SCRIPT_DIR/install_agent.sh"
+}
+
 ensure_root() {
   if [[ "${EUID}" -eq 0 ]]; then
     return
@@ -123,68 +154,95 @@ ensure_root() {
 }
 
 show_access_info() {
-  local host port domain token ip db
+  local role host port domain token ip db wg_ip
+  role="$(service_role)"
   host="$(bind_host)"
   port="$(bind_port)"
   domain="$(read_access_value domain)"
   token="$(read_config_value AGENT_TOKEN)"
   ip="$(server_ip)"
   db="$(database_path)"
+  wg_ip="$(wireguard_ip)"
 
-  log "访问信息"
-  if [[ -n "$domain" ]]; then
-    echo "域名入口: https://${domain}"
-  elif [[ "$host" == "127.0.0.1" || "$host" == "::1" || "$host" == "localhost" ]]; then
-    echo "本地入口: http://127.0.0.1:${port}"
+  log "Access Info"
+  echo "Role: ${role}"
+
+  if [[ "$role" == "manager" ]]; then
+    if [[ -n "$domain" ]]; then
+      echo "Manager URL: https://${domain}"
+    elif [[ "$host" == "127.0.0.1" || "$host" == "::1" || "$host" == "localhost" ]]; then
+      echo "Manager URL: http://127.0.0.1:${port}"
+    else
+      echo "Manager URL: http://${ip}:${port}"
+    fi
   else
-    echo "公网入口: http://${ip}:${port}"
+    if [[ "$host" == "127.0.0.1" || "$host" == "::1" || "$host" == "localhost" ]]; then
+      echo "Agent API: http://127.0.0.1:${port}"
+    else
+      echo "Agent API: http://${ip}:${port}"
+    fi
+    echo "Browser UI: disabled on agent-only nodes"
   fi
 
+  if [[ -n "$wg_ip" ]]; then
+    echo "WireGuard IP: ${wg_ip}"
+    echo "WireGuard URL: http://${wg_ip}:${port}"
+  fi
   if [[ -n "$token" ]]; then
     echo "AGENT_TOKEN: ${token}"
   fi
   echo "SQLite: ${db}"
 }
 
-run_install() {
+run_install_with_script() {
   local install_system_packages="$1"
   local sync_python_deps="$2"
+  local install_script="$3"
   local source_project_dir
   source_project_dir="$(resolve_source_project_dir)"
 
-  log "同步 File Panel"
+  log "Sync File Panel"
   if [[ "$source_project_dir" != "$INSTALLED_PROJECT_DIR" ]]; then
-    echo "源码目录: ${source_project_dir}"
+    echo "Source directory: ${source_project_dir}"
   fi
+
   INSTALL_SYSTEM_PACKAGES="$install_system_packages" \
   SYNC_PYTHON_DEPS="$sync_python_deps" \
   PROJECT_DIR_OVERRIDE="$source_project_dir" \
-  bash "$INSTALL_SCRIPT"
+  bash "$install_script"
+}
+
+run_install() {
+  local install_system_packages="$1"
+  local sync_python_deps="$2"
+  local install_script
+  install_script="$(resolve_install_script)"
+  run_install_with_script "$install_system_packages" "$sync_python_deps" "$install_script"
 }
 
 start_agent() {
-  log "启动 ${SERVICE_NAME}"
+  log "Start ${SERVICE_NAME}"
   systemctl start "$SERVICE_NAME"
 }
 
 restart_agent() {
-  log "重启 ${SERVICE_NAME}"
+  log "Restart ${SERVICE_NAME}"
   systemctl restart "$SERVICE_NAME"
 }
 
 stop_agent() {
-  log "停止 ${SERVICE_NAME}"
+  log "Stop ${SERVICE_NAME}"
   systemctl stop "$SERVICE_NAME"
 }
 
 status_agent() {
-  log "服务状态"
+  log "Service Status"
   systemctl status "$SERVICE_NAME" --no-pager --lines=30 || true
 }
 
 logs_agent() {
   local lines="${1:-$DEFAULT_LOG_LINES}"
-  log "最近日志"
+  log "Recent Logs"
   journalctl -u "$SERVICE_NAME" -n "$lines" --no-pager
 }
 
@@ -215,68 +273,65 @@ grant_access() {
     target="$(read_config_value AGENT_ROOT)"
   fi
   if [[ -z "$target" ]]; then
-    echo "请提供要授权的路径" >&2
+    echo "Please provide a directory to grant." >&2
     exit 1
   fi
 
-  log "授权目录给 filepanel"
-  echo "目标目录: ${target}"
+  log "Grant Access To filepanel"
+  echo "Target: ${target}"
   if [[ ! -x /usr/local/libexec/file-panel/file-panel-helper.sh ]]; then
-    echo "privileged helper is not installed" >&2
+    echo "Privileged helper is not installed." >&2
     exit 1
   fi
   /usr/local/libexec/file-panel/file-panel-helper.sh grant-path-access "$target"
-  echo "已授予 filepanel 访问权限"
+  echo "Access granted to filepanel."
 }
 
 revoke_access() {
   local target="${1:-}"
   if [[ -z "$target" ]]; then
-    echo "请提供要撤销授权的路径" >&2
+    echo "Please provide a directory to revoke." >&2
     exit 1
   fi
 
-  log "撤销目录对 filepanel 的 ACL"
-  echo "目标目录: ${target}"
+  log "Revoke Access From filepanel"
+  echo "Target: ${target}"
   if [[ ! -x /usr/local/libexec/file-panel/file-panel-helper.sh ]]; then
-    echo "privileged helper is not installed" >&2
+    echo "Privileged helper is not installed." >&2
     exit 1
   fi
   /usr/local/libexec/file-panel/file-panel-helper.sh revoke-path-access "$target"
-  echo "已移除 filepanel 的 ACL"
+  echo "ACL removed from filepanel."
 }
 
 uninstall_panel() {
-  log "卸载 File Panel"
+  log "Uninstall File Panel"
   bash "$UNINSTALL_SCRIPT"
 }
 
 show_help() {
   cat <<'EOF'
-用法:
+Usage:
   file-panel <command>
 
-命令:
-  start         启动服务
-  restart       重启服务
-  stop          停止服务
-  status        查看服务状态
-  logs [n]      查看最近 n 行日志，默认 80 行
-  info          输出当前入口、访问令牌和 SQLite 路径
-  grant-access  为指定目录授予 filepanel 访问权限；默认使用当前 AGENT_ROOT
-  revoke-access 撤销指定目录对 filepanel 的 ACL 授权
-  uninstall     一键卸载 File Panel 及 SQLite 数据
-  full-install  首次安装或补系统依赖，然后重启服务
-  redeploy      跳过 apt，只同步代码和 Python 依赖，然后重启服务
-  quick         跳过 apt 和 pip，只同步代码后重启服务
-  help          显示帮助
+Commands:
+  start         Start the installed service
+  restart       Restart the installed service
+  stop          Stop the installed service
+  status        Show service status
+  logs [n]      Show the last n service log lines (default: 80)
+  info          Show role, URL, WireGuard IP and AGENT_TOKEN
+  grant-access  Grant file access to filepanel for a directory; defaults to AGENT_ROOT
+  revoke-access Revoke filepanel ACL access from a directory
+  uninstall     Uninstall File Panel and remove SQLite data
+  full-install  Install dependencies, sync code and restart the current role
+  redeploy      Sync code and Python dependencies, then restart the current role
+  quick         Sync code only, then restart the current role
+  help          Show this message
 
-常用:
-  file-panel start
-  file-panel restart
-  file-panel grant-access /srv/data
-  file-panel revoke-access /root/.ssh/id_ed25519
-  file-panel uninstall
+Role-specific install scripts:
+  sudo bash scripts/install_manager.sh
+  sudo bash scripts/install_agent_only.sh
 EOF
 }
 
@@ -341,7 +396,7 @@ case "$command" in
     uninstall_panel
     ;;
   *)
-    echo "未知命令: $command" >&2
+    echo "Unknown command: $command" >&2
     show_help >&2
     exit 1
     ;;
