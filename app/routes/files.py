@@ -128,7 +128,7 @@ def download_file(
     download_token: str | None = Query(default=None),
     authorization: str | None = Header(default=None),
     session_cookie: str | None = Cookie(default=None, alias=SESSION_COOKIE_NAME),
-) -> FileResponse | Response:
+) -> Response:
     if server_id is not None:
         if not is_request_authenticated(authorization, session_cookie, allow_agent_token=True):
             raise HTTPException(status_code=403, detail="download authorization required")
