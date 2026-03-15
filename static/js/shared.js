@@ -28,7 +28,7 @@ export const state = {
   fileReadOnly: false,
   systemRoots: [],
   selectedSystemRoot: null,
-  currentPath: "/",
+  currentPath: null,
   parentPath: null,
   showHidden: false,
   resourceSampleInterval: 5,

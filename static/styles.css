@@ -933,6 +933,12 @@ h3 {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
+  align-items: flex-start;
+}
+
+.toolbar > button,
+.toolbar > .file-picker {
+  flex: 0 0 auto;
 }
 
 .toolbar-note {

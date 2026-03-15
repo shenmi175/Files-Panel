@@ -16,9 +16,22 @@ function normalizedBrowseMode() {
   return state.fileBrowseMode === "system" ? "system" : "workspace";
 }
 
+function effectiveTargetPath(targetPath) {
+  if (targetPath) {
+    return targetPath;
+  }
+  if (normalizedBrowseMode() === "system") {
+    return state.selectedSystemRoot || state.systemRoots[0] || null;
+  }
+  return state.currentPath || state.agent?.root_path || null;
+}
+
 function buildFilesUrl(targetPath) {
   const params = new URLSearchParams();
-  params.set("path", targetPath || "/");
+  const nextPath = effectiveTargetPath(targetPath);
+  if (nextPath) {
+    params.set("path", nextPath);
+  }
   if (state.showHidden) {
     params.set("show_hidden", "true");
   }
@@ -91,7 +104,7 @@ function syncFileModeTabs() {
 }
 
 export function navigateToPath(targetPath) {
-  state.currentPath = targetPath || "/";
+  state.currentPath = targetPath || null;
   return loadFiles();
 }
 
@@ -230,7 +243,7 @@ export function renderFiles(payload) {
 }
 
 export async function loadFiles() {
-  const payload = await request(buildFilesUrl(state.currentPath || "/"));
+  const payload = await request(buildFilesUrl(state.currentPath));
   state.filesLoaded = true;
   renderFiles(payload);
 }
@@ -244,7 +257,7 @@ export function switchFileBrowseMode(mode) {
   state.fileBrowseMode = nextMode;
   state.currentPath = nextMode === "system"
     ? (state.selectedSystemRoot || state.systemRoots[0] || "/root")
-    : (state.agent?.root_path || "/");
+    : (state.agent?.root_path || null);
   loadFiles().catch((error) => showStatus(error.message, "error"));
 }
 

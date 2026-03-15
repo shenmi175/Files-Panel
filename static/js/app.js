@@ -142,7 +142,7 @@ function resetSelectedNodeData() {
   state.fileReadOnly = false;
   state.systemRoots = [];
   state.selectedSystemRoot = null;
-  state.currentPath = "/";
+  state.currentPath = null;
   state.parentPath = null;
 }
 
