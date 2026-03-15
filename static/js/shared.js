@@ -1,4 +1,6 @@
 const LEGACY_TOKEN_STORAGE_KEY = "files_agent_token";
+const SELECTED_SERVER_ID_STORAGE_KEY = "file_panel_selected_server_id";
+const SELECTED_SERVER_NAME_STORAGE_KEY = "file_panel_selected_server_name";
 
 const VIEW_HASHES = {
   overview: "#overview",
@@ -22,6 +24,10 @@ export const state = {
   selectedEntry: null,
   selectedServerId: null,
   selectedServerName: null,
+  fileBrowseMode: "workspace",
+  fileReadOnly: false,
+  systemRoots: [],
+  selectedSystemRoot: null,
   currentPath: "/",
   parentPath: null,
   showHidden: false,
@@ -43,6 +49,30 @@ export const state = {
   servers: [],
   preloadStarted: false,
 };
+
+function ensureFileBrowserControls() {
+  const filesWorkspace = document.querySelector("#files-view .files-workspace");
+  const fileHeader = filesWorkspace?.querySelector(".file-header");
+  if (!filesWorkspace || !fileHeader || document.getElementById("file-browse-controls")) {
+    return;
+  }
+
+  const controls = document.createElement("div");
+  controls.id = "file-browse-controls";
+  controls.className = "file-browse-controls";
+  controls.innerHTML = `
+    <div class="file-mode-switch" aria-label="文件浏览模式">
+      <button type="button" class="file-mode-tab is-active" data-browse-mode="workspace">工作区</button>
+      <button type="button" class="file-mode-tab" data-browse-mode="system">系统只读</button>
+    </div>
+    <label id="system-root-field" class="field file-system-root hidden">
+      <span>系统路径</span>
+      <select id="system-root-select"></select>
+    </label>
+    <p id="file-mode-note" class="muted file-mode-note"></p>
+  `;
+  fileHeader.after(controls);
+}
 
 function ensureWireguardBootstrapPanel() {
   const nodesView = document.getElementById("nodes-view");
@@ -120,6 +150,7 @@ function ensureWireguardBootstrapPanel() {
 }
 
 ensureWireguardBootstrapPanel();
+ensureFileBrowserControls();
 
 export const dom = {
   appShell: document.getElementById("app-shell"),
@@ -190,6 +221,10 @@ export const dom = {
   pathBreadcrumbsEl: document.getElementById("path-breadcrumbs"),
   goUpButton: document.getElementById("go-up"),
   showHiddenToggle: document.getElementById("show-hidden-toggle"),
+  fileModeTabs: document.querySelectorAll(".file-mode-tab"),
+  systemRootField: document.getElementById("system-root-field"),
+  systemRootSelect: document.getElementById("system-root-select"),
+  fileModeNote: document.getElementById("file-mode-note"),
   statusEl: document.getElementById("status"),
   uploadInput: document.getElementById("upload-input"),
   uploadButton: document.getElementById("upload-button"),
@@ -221,6 +256,32 @@ function normalizeView(value) {
 export function removePersistedToken() {
   window.localStorage.removeItem(LEGACY_TOKEN_STORAGE_KEY);
   window.sessionStorage.removeItem(LEGACY_TOKEN_STORAGE_KEY);
+}
+
+export function persistSelectedServer(serverId, serverName) {
+  if (Number.isInteger(serverId)) {
+    window.localStorage.setItem(SELECTED_SERVER_ID_STORAGE_KEY, String(serverId));
+    window.localStorage.setItem(SELECTED_SERVER_NAME_STORAGE_KEY, serverName || "");
+    return;
+  }
+  window.localStorage.removeItem(SELECTED_SERVER_ID_STORAGE_KEY);
+  window.localStorage.removeItem(SELECTED_SERVER_NAME_STORAGE_KEY);
+}
+
+export function loadPersistedSelectedServer() {
+  const rawId = window.localStorage.getItem(SELECTED_SERVER_ID_STORAGE_KEY);
+  if (rawId === null) {
+    return { serverId: null, serverName: null };
+  }
+  const parsed = Number.parseInt(rawId, 10);
+  if (!Number.isInteger(parsed)) {
+    persistSelectedServer(null, null);
+    return { serverId: null, serverName: null };
+  }
+  return {
+    serverId: parsed,
+    serverName: window.localStorage.getItem(SELECTED_SERVER_NAME_STORAGE_KEY) || null,
+  };
 }
 
 export function escapeHtml(value) {

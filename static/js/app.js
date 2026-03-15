@@ -4,6 +4,8 @@ import {
   dom,
   formatError,
   getViewFromHash,
+  loadPersistedSelectedServer,
+  persistSelectedServer,
   removePersistedToken,
   request,
   setLogLevel,
@@ -19,6 +21,8 @@ import {
   goUp,
   loadFiles,
   renameSelected,
+  selectSystemRoot,
+  switchFileBrowseMode,
   uploadFile,
 } from "./files.js";
 import { loadLogsSection, resetLogsState } from "./logs.js";
@@ -108,6 +112,10 @@ function resetProtectedState() {
   state.logsLoaded = false;
   state.preloadStarted = false;
   state.selectedEntry = null;
+  state.fileBrowseMode = "workspace";
+  state.fileReadOnly = false;
+  state.systemRoots = [];
+  state.selectedSystemRoot = null;
   state.servers = [];
   resetServerForm();
   resetLogsState();
@@ -130,6 +138,10 @@ function resetSelectedNodeData() {
   state.logLines = [];
   state.preloadStarted = false;
   state.selectedEntry = null;
+  state.fileBrowseMode = "workspace";
+  state.fileReadOnly = false;
+  state.systemRoots = [];
+  state.selectedSystemRoot = null;
   state.currentPath = "/";
   state.parentPath = null;
 }
@@ -352,6 +364,7 @@ async function switchServerSelection(serverId, serverName = null) {
 
   state.selectedServerId = normalizedServerId;
   state.selectedServerName = serverName;
+  persistSelectedServer(normalizedServerId, serverName);
 
   if (!canAccessProtectedViews()) {
     return;
@@ -494,6 +507,14 @@ function wireEvents() {
     state.selectedEntry = null;
     loadFiles().catch((error) => showStatus(error.message, "error"));
   });
+  dom.fileModeTabs.forEach((button) => {
+    button.addEventListener("click", () => {
+      switchFileBrowseMode(button.dataset.browseMode);
+    });
+  });
+  dom.systemRootSelect?.addEventListener("change", () => {
+    selectSystemRoot(dom.systemRootSelect.value);
+  });
   dom.uploadButton.addEventListener("click", uploadFile);
   dom.uploadInput.addEventListener("change", () => {
     dom.filePickerLabel.textContent = dom.uploadInput.files[0]?.name || "选择文件";
@@ -548,16 +569,39 @@ async function boot() {
   resetLogsState();
   removePersistedToken();
   resetAgentSummary();
+  const persistedServer = loadPersistedSelectedServer();
+  state.selectedServerId = persistedServer.serverId;
+  state.selectedServerName = persistedServer.serverName;
 
   try {
     await loadHealth();
     await loadSession();
 
     if (!state.authEnabled || state.isAuthenticated) {
-      await enterAuthenticatedApp({
-        forceLogsReset: false,
-        forceFilesReload: state.activeView === "files",
-      });
+      try {
+        await enterAuthenticatedApp({
+          forceLogsReset: false,
+          forceFilesReload: state.activeView === "files",
+        });
+      } catch (error) {
+        if (state.selectedServerId !== null) {
+          persistSelectedServer(null, null);
+          state.selectedServerId = null;
+          state.selectedServerName = null;
+          resetSelectedNodeData();
+          await enterAuthenticatedApp({
+            forceLogsReset: false,
+            forceFilesReload: state.activeView === "files",
+          });
+          showStatus(
+            `${error.message}；已回退到 manager 本机视图。`,
+            "info",
+            { autoClearMs: 7000 }
+          );
+        } else {
+          throw error;
+        }
+      }
     } else {
       showLoginView(
         state.registrationRequired

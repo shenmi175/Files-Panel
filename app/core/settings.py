@@ -12,6 +12,7 @@ from app.core.storage import bootstrap_paths, initialize_storage, load_config_va
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 STATIC_DIR = BASE_DIR / "static"
 DEFAULT_AGENT_ROOT = Path("/srv/file-panel/data")
+DEFAULT_SYSTEM_READONLY_PATHS = ("/root", "/etc", "/opt", "/var/log")
 RESOURCE_HISTORY_MAX_POINTS = 96
 RESOURCE_HISTORY_RETENTION_DAYS = 30
 DEFAULT_RESOURCE_SAMPLE_INTERVAL = 5
@@ -31,6 +32,7 @@ class Settings:
     root_path: Path
     auth_token: str | None
     sample_interval_seconds: int
+    system_readonly_paths: tuple[str, ...]
     env_file_path: Path
     state_dir: Path
     database_path: Path
@@ -58,6 +60,20 @@ def normalize_resource_sample_interval(
     return candidate
 
 
+def parse_system_readonly_paths(raw_value: str | None) -> tuple[str, ...]:
+    if not raw_value:
+        return DEFAULT_SYSTEM_READONLY_PATHS
+
+    values = []
+    for segment in raw_value.replace("\n", ",").split(","):
+        candidate = segment.strip()
+        if not candidate:
+            continue
+        expanded = Path(candidate).expanduser().resolve(strict=False)
+        values.append(str(expanded))
+    return tuple(dict.fromkeys(values)) or DEFAULT_SYSTEM_READONLY_PATHS
+
+
 def load_settings() -> Settings:
     paths = bootstrap_paths()
     initialize_storage(
@@ -69,6 +85,11 @@ def load_settings() -> Settings:
             "AGENT_TOKEN": os.getenv("AGENT_TOKEN", "").strip(),
             "RESOURCE_SAMPLE_INTERVAL": os.getenv("RESOURCE_SAMPLE_INTERVAL", str(DEFAULT_RESOURCE_SAMPLE_INTERVAL)).strip()
             or str(DEFAULT_RESOURCE_SAMPLE_INTERVAL),
+            "SYSTEM_READONLY_PATHS": os.getenv(
+                "SYSTEM_READONLY_PATHS",
+                ",".join(DEFAULT_SYSTEM_READONLY_PATHS),
+            ).strip()
+            or ",".join(DEFAULT_SYSTEM_READONLY_PATHS),
             "CERTBOT_EMAIL": os.getenv("CERTBOT_EMAIL", "").strip(),
             "ALLOW_SELF_RESTART": os.getenv("ALLOW_SELF_RESTART", "1").strip() or "1",
         }
@@ -105,6 +126,9 @@ def load_settings() -> Settings:
         auth_token=auth_token,
         sample_interval_seconds=normalize_resource_sample_interval(
             persisted.get("RESOURCE_SAMPLE_INTERVAL", os.getenv("RESOURCE_SAMPLE_INTERVAL")),
+        ),
+        system_readonly_paths=parse_system_readonly_paths(
+            persisted.get("SYSTEM_READONLY_PATHS", os.getenv("SYSTEM_READONLY_PATHS")),
         ),
         env_file_path=paths.env_file_path,
         state_dir=paths.state_dir,

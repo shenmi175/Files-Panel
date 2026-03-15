@@ -67,6 +67,14 @@ button:hover {
   box-shadow: 0 12px 24px rgba(29, 92, 77, 0.16);
 }
 
+button:disabled,
+input:disabled,
+select:disabled,
+textarea:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 button.secondary,
 .file-picker.secondary {
   background: var(--accent-soft);
@@ -346,6 +354,48 @@ h3 {
   flex: 1 1 560px;
   display: grid;
   gap: 10px;
+}
+
+.file-browse-controls {
+  display: grid;
+  gap: 12px;
+}
+
+.file-mode-switch {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px;
+  width: fit-content;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.file-mode-tab {
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+}
+
+.file-mode-tab:hover {
+  box-shadow: none;
+}
+
+.file-mode-tab.is-active {
+  background: var(--text);
+  color: white;
+}
+
+.file-system-root {
+  max-width: 360px;
+}
+
+.file-mode-note {
+  line-height: 1.55;
 }
 
 .status {

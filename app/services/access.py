@@ -10,7 +10,12 @@ from pathlib import Path
 from fastapi import HTTPException
 
 from app.core.auth import browser_auth_enabled
-from app.core.settings import DOMAIN_PATTERN, SETTINGS, normalize_resource_sample_interval
+from app.core.settings import (
+    DOMAIN_PATTERN,
+    SETTINGS,
+    normalize_resource_sample_interval,
+    parse_system_readonly_paths,
+)
 from app.core.storage import load_access_state, load_config_values, save_access_state, save_config_values
 from app.models import (
     AccessStatus,
@@ -49,6 +54,7 @@ def default_config_values() -> dict[str, str]:
         "AGENT_ROOT": str(SETTINGS.root_path),
         "AGENT_TOKEN": SETTINGS.auth_token or "",
         "RESOURCE_SAMPLE_INTERVAL": str(SETTINGS.sample_interval_seconds),
+        "SYSTEM_READONLY_PATHS": ",".join(SETTINGS.system_readonly_paths),
         "CERTBOT_EMAIL": SETTINGS.certbot_email or "",
         "ALLOW_SELF_RESTART": "1" if SETTINGS.allow_self_restart else "0",
     }
@@ -302,6 +308,9 @@ def build_config_response() -> ConfigResponse:
         desired_bind_port=desired_port,
         restart_pending=runtime_restart_needed(config_values),
         database_path=str(SETTINGS.database_path),
+        system_readonly_paths=list(
+            parse_system_readonly_paths(config_values.get("SYSTEM_READONLY_PATHS"))
+        ),
     )
 
 

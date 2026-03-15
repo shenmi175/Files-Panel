@@ -4,6 +4,9 @@ set -euo pipefail
 
 ENV_FILE="${ENV_FILE:-/etc/files-agent/files-agent.env}"
 SERVICE_USER="${SERVICE_USER:-filepanel}"
+DATABASE_PATH="${DATABASE_PATH:-}"
+APP_DIR="/opt/files-agent"
+READONLY_HELPER_SCRIPT="${APP_DIR}/scripts/readonly_system_helper.py"
 
 read_env_value() {
   local key="$1"
@@ -11,6 +14,42 @@ read_env_value() {
     return 0
   fi
   grep -E "^${key}=" "$ENV_FILE" | tail -n 1 | cut -d "=" -f 2- || true
+}
+
+database_path() {
+  if [[ -n "$DATABASE_PATH" ]]; then
+    printf '%s\n' "$DATABASE_PATH"
+    return
+  fi
+  local from_env
+  from_env="$(read_env_value DATABASE_PATH)"
+  if [[ -n "$from_env" ]]; then
+    printf '%s\n' "$from_env"
+    return
+  fi
+  printf '%s\n' "/var/lib/files-agent/file-panel.db"
+}
+
+read_db_config_value() {
+  local key="$1"
+  local db_path
+  db_path="$(database_path)"
+  if [[ ! -f "$db_path" ]]; then
+    return 0
+  fi
+  sqlite3 -batch -noheader "$db_path" \
+    "SELECT value FROM config WHERE key='${key}' LIMIT 1;" 2>/dev/null || true
+}
+
+read_setting_value() {
+  local key="$1"
+  local db_value
+  db_value="$(read_db_config_value "$key")"
+  if [[ -n "$db_value" ]]; then
+    printf '%s\n' "$db_value"
+    return
+  fi
+  read_env_value "$key"
 }
 
 DOMAIN_RE='^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$'
@@ -109,6 +148,37 @@ validate_grant_target() {
       exit 2
     fi
   done
+}
+
+readonly_roots_raw() {
+  local configured
+  configured="$(read_setting_value SYSTEM_READONLY_PATHS)"
+  if [[ -n "$configured" ]]; then
+    printf '%s\n' "$configured"
+    return
+  fi
+  printf '%s\n' "/root,/etc,/opt,/var/log"
+}
+
+validate_readonly_target() {
+  local target="$1"
+  local allowed_raw
+  local allowed_root
+  local resolved_allowed
+
+  allowed_raw="$(readonly_roots_raw)"
+  IFS=',' read -r -a readonly_parts <<<"$allowed_raw"
+  for allowed_root in "${readonly_parts[@]}"; do
+    allowed_root="$(echo "$allowed_root" | xargs)"
+    [[ -z "$allowed_root" ]] && continue
+    resolved_allowed="$(realpath -m "$allowed_root")"
+    if [[ "$target" == "$resolved_allowed" || "$target" == "$resolved_allowed/"* ]]; then
+      return
+    fi
+  done
+
+  echo "path is outside configured readonly system roots: $target" >&2
+  exit 2
 }
 
 grant_parent_traverse() {
@@ -319,6 +389,25 @@ wireguard_add_peer() {
   fi
 }
 
+readonly_list_json() {
+  local target_raw="${1:-}"
+  local show_hidden="${2:-false}"
+  local target
+  require_existing_path "$target_raw"
+  target="$(realpath "$target_raw")"
+  validate_readonly_target "$target"
+  python3 "$READONLY_HELPER_SCRIPT" list "$target" "$show_hidden"
+}
+
+readonly_read_file() {
+  local target_raw="${1:-}"
+  local target
+  require_existing_path "$target_raw"
+  target="$(realpath "$target_raw")"
+  validate_readonly_target "$target"
+  python3 "$READONLY_HELPER_SCRIPT" read "$target"
+}
+
 issue_cert() {
   local domain="$1"
   local email="${2:-}"
@@ -396,6 +485,12 @@ case "$command" in
     ;;
   wireguard-add-peer)
     wireguard_add_peer "${1:-wg0}" "${2:-}" "${3:-}" "${4:-25}"
+    ;;
+  readonly-list-json)
+    readonly_list_json "${1:-}" "${2:-false}"
+    ;;
+  readonly-read-file)
+    readonly_read_file "${1:-}"
     ;;
   issue-cert)
     issue_cert "${1:-}" "${2:-}"

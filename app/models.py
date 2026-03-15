@@ -240,6 +240,9 @@ class FileEntry(BaseModel):
 
 
 class FileListResponse(BaseModel):
+    browse_mode: str = "workspace"
+    read_only: bool = False
+    system_roots: list[str] = Field(default_factory=list)
     current_path: str
     root_path: str
     parent_path: str | None
@@ -269,6 +272,7 @@ class ConfigResponse(BaseModel):
     desired_bind_port: int
     restart_pending: bool
     database_path: str
+    system_readonly_paths: list[str] = Field(default_factory=list)
 
 
 class ConfigUpdateRequest(BaseModel):
@@ -300,10 +304,12 @@ class TokenResetResponse(BaseModel):
 class RenameFileRequest(BaseModel):
     old_path: str
     new_path: str
+    browse_mode: str | None = None
 
 
 class CreateDirectoryRequest(BaseModel):
     path: str
+    browse_mode: str | None = None
 
 
 class MessageResponse(BaseModel):

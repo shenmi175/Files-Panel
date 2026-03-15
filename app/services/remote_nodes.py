@@ -146,6 +146,7 @@ def remote_upload_request(
     *,
     path: str | None,
     file: UploadFile,
+    browse_mode: str | None = None,
 ) -> dict[str, Any]:
     server = get_remote_server_context(server_id)
     boundary = f"----FilePanel{secrets.token_hex(12)}"
@@ -158,7 +159,11 @@ def remote_upload_request(
     ).encode("utf-8") + file_bytes + f"\r\n--{boundary}--\r\n".encode("utf-8")
 
     remote_request = request.Request(
-        _build_remote_url("/api/files/upload", server=server, params={"path": path}),
+        _build_remote_url(
+            "/api/files/upload",
+            server=server,
+            params={"path": path, "browse_mode": browse_mode},
+        ),
         data=body,
         headers={
             "Accept": "application/json",
@@ -194,10 +199,19 @@ def remote_upload_request(
     return parsed
 
 
-def remote_download_request(server_id: int, *, path: str) -> RemoteDownloadPayload:
+def remote_download_request(
+    server_id: int,
+    *,
+    path: str,
+    browse_mode: str | None = None,
+) -> RemoteDownloadPayload:
     server = get_remote_server_context(server_id)
     remote_request = request.Request(
-        _build_remote_url("/api/files/download", server=server, params={"path": path}),
+        _build_remote_url(
+            "/api/files/download",
+            server=server,
+            params={"path": path, "browse_mode": browse_mode},
+        ),
         headers={
             "Authorization": f"Bearer {server.auth_token}",
         },

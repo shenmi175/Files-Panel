@@ -12,13 +12,82 @@ import {
   state,
 } from "./shared.js";
 
+function normalizedBrowseMode() {
+  return state.fileBrowseMode === "system" ? "system" : "workspace";
+}
+
 function buildFilesUrl(targetPath) {
   const params = new URLSearchParams();
   params.set("path", targetPath || "/");
   if (state.showHidden) {
     params.set("show_hidden", "true");
   }
+  if (normalizedBrowseMode() === "system") {
+    params.set("browse_mode", "system");
+  }
   return `/api/files?${params.toString()}`;
+}
+
+function buildDownloadLinkUrl(targetPath) {
+  const params = new URLSearchParams();
+  params.set("path", targetPath);
+  if (normalizedBrowseMode() === "system") {
+    params.set("browse_mode", "system");
+  }
+  return `/api/files/download-link?${params.toString()}`;
+}
+
+function updateFileActionState() {
+  const readOnly = Boolean(state.fileReadOnly);
+  const title = readOnly ? "系统只读模式下不允许写操作" : "";
+  [
+    dom.uploadButton,
+    dom.createDirButton,
+    dom.renameButton,
+    dom.deleteButton,
+    dom.uploadInput,
+  ].forEach((element) => {
+    if (!element) {
+      return;
+    }
+    element.disabled = readOnly;
+    if ("title" in element) {
+      element.title = title;
+    }
+  });
+
+  if (dom.fileModeNote) {
+    dom.fileModeNote.textContent = readOnly
+      ? "系统只读模式由目标主机上的特权 helper 只读列目录和下载文件，不允许上传、删除、重命名或新建。"
+      : "工作区模式使用 AGENT_ROOT 边界，支持上传、删除、重命名和新建目录。";
+  }
+}
+
+function renderSystemRootOptions() {
+  if (!dom.systemRootSelect || !dom.systemRootField) {
+    return;
+  }
+  const roots = Array.isArray(state.systemRoots) ? state.systemRoots : [];
+  const hasRoots = roots.length > 0;
+  dom.systemRootField.classList.toggle("hidden", normalizedBrowseMode() !== "system");
+  dom.systemRootSelect.innerHTML = roots
+    .map((root) => `<option value="${escapeHtml(root)}">${escapeHtml(root)}</option>`)
+    .join("");
+  if (hasRoots) {
+    const selected = state.selectedSystemRoot && roots.includes(state.selectedSystemRoot)
+      ? state.selectedSystemRoot
+      : roots[0];
+    state.selectedSystemRoot = selected;
+    dom.systemRootSelect.value = selected;
+  }
+}
+
+function syncFileModeTabs() {
+  dom.fileModeTabs.forEach((button) => {
+    button.classList.toggle("is-active", button.dataset.browseMode === normalizedBrowseMode());
+  });
+  renderSystemRootOptions();
+  updateFileActionState();
 }
 
 export function navigateToPath(targetPath) {
@@ -107,21 +176,28 @@ function renderFileRow(entry) {
 }
 
 export function renderFiles(payload) {
+  state.fileBrowseMode = payload.browse_mode === "system" ? "system" : "workspace";
+  state.fileReadOnly = Boolean(payload.read_only);
+  state.systemRoots = Array.isArray(payload.system_roots) ? payload.system_roots : [];
   state.currentPath = payload.current_path;
   state.parentPath = payload.parent_path;
   state.showHidden = payload.show_hidden;
+  if (state.fileBrowseMode === "system") {
+    state.selectedSystemRoot = payload.root_path;
+  }
   dom.showHiddenToggle.checked = payload.show_hidden;
   dom.activePathLabel.textContent = payload.show_hidden
     ? `${payload.current_path} · 默认显示隐藏文件`
     : payload.current_path;
   renderBreadcrumbs(payload.current_path, payload.root_path);
+  syncFileModeTabs();
 
   if (state.selectedEntry && !payload.entries.some((entry) => entry.path === state.selectedEntry.path)) {
     state.selectedEntry = null;
   }
 
   if (!payload.entries.length) {
-    setFilesPlaceholder(payload.show_hidden ? "当前目录为空" : "当前目录为空，隐藏文件未显示");
+    setFilesPlaceholder(payload.show_hidden ? "当前目录为空。" : "当前目录为空，或隐藏文件未显示。");
     return;
   }
 
@@ -159,6 +235,29 @@ export async function loadFiles() {
   renderFiles(payload);
 }
 
+export function switchFileBrowseMode(mode) {
+  const nextMode = mode === "system" ? "system" : "workspace";
+  if (state.fileBrowseMode === nextMode && state.filesLoaded) {
+    return;
+  }
+  state.selectedEntry = null;
+  state.fileBrowseMode = nextMode;
+  state.currentPath = nextMode === "system"
+    ? (state.selectedSystemRoot || state.systemRoots[0] || "/root")
+    : (state.agent?.root_path || "/");
+  loadFiles().catch((error) => showStatus(error.message, "error"));
+}
+
+export function selectSystemRoot(rootPath) {
+  if (!rootPath) {
+    return;
+  }
+  state.selectedSystemRoot = rootPath;
+  state.selectedEntry = null;
+  state.currentPath = rootPath;
+  loadFiles().catch((error) => showStatus(error.message, "error"));
+}
+
 export function goUp() {
   if (!state.parentPath) {
     return;
@@ -167,9 +266,14 @@ export function goUp() {
 }
 
 export async function uploadFile() {
+  if (state.fileReadOnly) {
+    showStatus("系统只读模式下不允许上传文件。", "error");
+    return;
+  }
+
   const file = dom.uploadInput.files[0];
   if (!file) {
-    showStatus("请先选择要上传的文件。", "error");
+    showStatus("请选择要上传的文件。", "error");
     return;
   }
 
@@ -177,13 +281,18 @@ export async function uploadFile() {
   formData.append("file", file);
 
   try {
-    await request(`/api/files/upload?path=${encodeURIComponent(state.currentPath || "/")}`, {
-      method: "POST",
-      body: formData,
-    });
+    await request(
+      `/api/files/upload?path=${encodeURIComponent(state.currentPath || "/")}&browse_mode=${encodeURIComponent(
+        normalizedBrowseMode()
+      )}`,
+      {
+        method: "POST",
+        body: formData,
+      }
+    );
     dom.uploadInput.value = "";
     dom.filePickerLabel.textContent = "选择文件";
-    showStatus(`已上传 ${file.name}。`, "success");
+    showStatus(`已上传 ${file.name}`, "success");
     await loadFiles();
   } catch (error) {
     showStatus(error.message, "error");
@@ -191,6 +300,11 @@ export async function uploadFile() {
 }
 
 export async function createDirectory() {
+  if (state.fileReadOnly) {
+    showStatus("系统只读模式下不允许新建目录。", "error");
+    return;
+  }
+
   const nextName = window.prompt("输入新目录名称");
   if (!nextName) {
     return;
@@ -202,9 +316,10 @@ export async function createDirectory() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         path: joinPath(state.currentPath || "/", nextName),
+        browse_mode: normalizedBrowseMode(),
       }),
     });
-    showStatus(`已创建目录 ${nextName}。`, "success");
+    showStatus(`已创建目录 ${nextName}`, "success");
     await loadFiles();
   } catch (error) {
     showStatus(error.message, "error");
@@ -212,8 +327,12 @@ export async function createDirectory() {
 }
 
 export async function renameSelected() {
+  if (state.fileReadOnly) {
+    showStatus("系统只读模式下不允许重命名。", "error");
+    return;
+  }
   if (!state.selectedEntry) {
-    showStatus("请先选择要重命名的项目。", "error");
+    showStatus("请先选择一个条目。", "error");
     return;
   }
 
@@ -229,10 +348,11 @@ export async function renameSelected() {
       body: JSON.stringify({
         old_path: state.selectedEntry.path,
         new_path: joinPath(state.currentPath || "/", nextName),
+        browse_mode: normalizedBrowseMode(),
       }),
     });
     state.selectedEntry = null;
-    showStatus(`已重命名为 ${nextName}。`, "success");
+    showStatus(`已重命名为 ${nextName}`, "success");
     await loadFiles();
   } catch (error) {
     showStatus(error.message, "error");
@@ -240,8 +360,12 @@ export async function renameSelected() {
 }
 
 export async function deleteSelected() {
+  if (state.fileReadOnly) {
+    showStatus("系统只读模式下不允许删除。", "error");
+    return;
+  }
   if (!state.selectedEntry) {
-    showStatus("请先选择要删除的项目。", "error");
+    showStatus("请先选择要删除的条目。", "error");
     return;
   }
 
@@ -252,11 +376,16 @@ export async function deleteSelected() {
 
   try {
     const selectedName = state.selectedEntry.name;
-    await request(`/api/files?path=${encodeURIComponent(state.selectedEntry.path)}`, {
-      method: "DELETE",
-    });
+    await request(
+      `/api/files?path=${encodeURIComponent(state.selectedEntry.path)}&browse_mode=${encodeURIComponent(
+        normalizedBrowseMode()
+      )}`,
+      {
+        method: "DELETE",
+      }
+    );
     state.selectedEntry = null;
-    showStatus(`已删除 ${selectedName}。`, "success");
+    showStatus(`已删除 ${selectedName}`, "success");
     await loadFiles();
   } catch (error) {
     showStatus(error.message, "error");
@@ -269,14 +398,12 @@ export async function downloadSelected() {
     return;
   }
   if (state.selectedEntry.type !== "file") {
-    showStatus("当前仅支持下载文件，不支持直接下载目录。", "error");
+    showStatus("当前只支持下载文件，不支持直接下载目录。", "error");
     return;
   }
 
   try {
-    const payload = await request(
-      `/api/files/download-link?path=${encodeURIComponent(state.selectedEntry.path)}`
-    );
+    const payload = await request(buildDownloadLinkUrl(state.selectedEntry.path));
     const downloadUrl = payload.url;
     const anchor = document.createElement("a");
     anchor.href = downloadUrl;
