@@ -9,6 +9,7 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
+from app.core.auth import browser_auth_enabled
 from app.core.settings import DOMAIN_PATTERN, SETTINGS, normalize_resource_sample_interval
 from app.core.storage import load_access_state, load_config_values, save_access_state, save_config_values
 from app.models import (
@@ -294,7 +295,7 @@ def build_config_response() -> ConfigResponse:
         ),
         public_domain=str(public_domain) if public_domain else None,
         token_configured=bool(config_values.get("AGENT_TOKEN")),
-        auth_enabled=bool(SETTINGS.auth_token),
+        auth_enabled=browser_auth_enabled(),
         current_bind_host=SETTINGS.host,
         current_bind_port=SETTINGS.port,
         desired_bind_host=desired_host,

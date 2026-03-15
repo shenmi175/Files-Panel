@@ -11,29 +11,54 @@
       <article class="panel login-panel">
         <div class="login-copy">
           <p class="eyebrow">Python + FastAPI Control Plane</p>
-          <h1>文件与资源控制面板</h1>
-          <p class="muted">
-            输入访问令牌后进入控制面板。登录会话保存在服务端，通过 HttpOnly Cookie 维持。
+          <h1 id="login-title">文件与资源控制面板</h1>
+          <p id="login-subtitle" class="muted">
+            使用本地管理员账号登录控制面板。浏览器仅保存 HttpOnly 会话，不再使用访问令牌直接登录。
           </p>
         </div>
 
         <form id="login-form" class="login-form">
           <label class="field">
-            <span>访问令牌</span>
+            <span id="login-username-label">账号</span>
             <input
-              id="login-token"
+              id="login-username"
+              type="text"
+              placeholder="输入管理员账号"
+              autocomplete="username"
+              spellcheck="false"
+            />
+          </label>
+
+          <label class="field">
+            <span id="login-password-label">密码</span>
+            <input
+              id="login-password"
               type="password"
-              placeholder="输入服务器访问令牌"
+              placeholder="输入登录密码"
               autocomplete="current-password"
               spellcheck="false"
             />
           </label>
-          <button type="submit">登录面板</button>
+
+          <label id="login-confirm-field" class="field hidden">
+            <span>确认密码</span>
+            <input
+              id="login-confirm"
+              type="password"
+              placeholder="再次输入密码"
+              autocomplete="new-password"
+              spellcheck="false"
+            />
+          </label>
+
+          <button id="login-submit" type="submit">
+            <span id="login-submit-label">登录</span>
+          </button>
         </form>
 
-        <div class="login-notes">
-          <p class="muted">登录后才能读取资源、文件、接入、节点和日志信息。</p>
-          <p class="muted">如果令牌已更新，请使用新的令牌重新登录。</p>
+        <div id="login-notes" class="login-notes">
+          <p class="muted">首次使用时先注册一个本地管理员账号，之后使用账号密码登录。</p>
+          <p class="muted">AGENT_TOKEN 仅用于节点接入、外部校验和签名下载，不再用于浏览器登录。</p>
         </div>
 
         <div id="login-message" class="auth-feedback hidden"></div>
@@ -45,11 +70,13 @@
         <aside class="panel sidebar">
           <div class="sidebar-brand">
             <p class="eyebrow">Node Workspace</p>
-            <h2>节点工作区</h2>
-            <p class="muted">左侧切换页面，右侧处理当前节点的资源、文件、接入、日志和文档。</p>
+            <h2>节点工作台</h2>
+            <p class="muted">
+              当前页面默认管理本机 agent。远程节点现在仍以目录登记为主，后续可继续接入多节点代理能力。
+            </p>
           </div>
 
-          <nav class="view-switch view-switch-sidebar" aria-label="页面导航">
+          <nav class="view-switch view-switch-sidebar" aria-label="主菜单">
             <button id="view-overview" class="view-tab is-active" data-view="overview">概览</button>
             <button id="view-files" class="view-tab" data-view="files">文件</button>
             <button id="view-access" class="view-tab" data-view="access">接入</button>
@@ -67,25 +94,27 @@
               <div class="hero-copy">
                 <p class="eyebrow">Python + FastAPI Control Plane</p>
                 <h1>文件与资源控制面板</h1>
-                <p class="muted">当前版本管理本机节点，并为后续多节点目录与 WireGuard 组网保留扩展空间。</p>
+                <p class="muted">
+                  管理当前节点的资源、文件、接入、节点目录和运行日志。
+                </p>
               </div>
             </div>
 
             <section id="agent-summary" class="summary-strip">
               <div class="summary-card">
                 <span>当前节点</span>
-                <strong id="agent-name">待加载</strong>
+                <strong id="agent-name">未加载</strong>
                 <small id="agent-hostname">-</small>
               </div>
               <div class="summary-card">
                 <span>运行用户</span>
                 <strong id="agent-user">-</strong>
-                <small>本机服务身份</small>
+                <small>本机服务账号</small>
               </div>
               <div class="summary-card">
                 <span>访问入口</span>
                 <strong id="agent-entry">待加载</strong>
-                <small id="agent-auth">登录后显示当前接入状态</small>
+                <small id="agent-auth">等待获取入口状态</small>
               </div>
             </section>
           </header>
@@ -100,23 +129,23 @@
                   <h2>资源概览</h2>
                 </div>
                 <div class="section-actions">
-                  <span id="chart-range" class="ghost-chip">等待采样</span>
+                  <span id="chart-range" class="ghost-chip">等待范围数据</span>
                   <button id="refresh-dashboard" class="secondary">刷新</button>
                 </div>
               </div>
 
               <div id="resources" class="metric-grid empty">正在加载资源概览...</div>
-              <div id="resource-breakdowns" class="resource-detail-grid empty">正在加载资源分项...</div>
+              <div id="resource-breakdowns" class="resource-detail-grid empty">正在加载细分数据...</div>
 
               <div class="chart-panel">
                 <div class="chart-head">
                   <div>
                     <p class="section-kicker">Trend</p>
                     <h3>趋势</h3>
-                    <p id="chart-caption" class="muted">等待历史采样点</p>
+                    <p id="chart-caption" class="muted">正在准备趋势图...</p>
                   </div>
                   <div class="chart-tools">
-                    <div id="resource-range-tabs" class="range-tabs" aria-label="资源历史时间范围">
+                    <div id="resource-range-tabs" class="range-tabs" aria-label="趋势范围">
                       <button type="button" class="resource-range-tab" data-range="15m">15m</button>
                       <button type="button" class="resource-range-tab is-active" data-range="1h">1h</button>
                       <button type="button" class="resource-range-tab" data-range="6h">6h</button>
@@ -126,7 +155,7 @@
                     <div id="chart-legend" class="legend"></div>
                   </div>
                 </div>
-                <div id="resource-chart" class="chart empty">等待趋势数据</div>
+                <div id="resource-chart" class="chart empty">正在加载趋势图...</div>
               </div>
             </article>
           </section>
@@ -137,7 +166,7 @@
                 <div>
                   <p class="section-kicker">Files</p>
                   <h2>文件工作区</h2>
-                  <p id="active-path" class="muted">等待当前路径</p>
+                  <p id="active-path" class="muted">等待路径信息</p>
                 </div>
                 <div class="section-actions">
                   <span class="ghost-chip">双击目录进入，单击条目后再执行操作</span>
@@ -186,11 +215,11 @@
                 <div class="section-head">
                   <div>
                     <p class="section-kicker">Access</p>
-                    <h2>域名接入</h2>
+                    <h2>接入方式</h2>
                     <p id="access-summary" class="muted">正在加载接入状态...</p>
                   </div>
                 </div>
-                <div id="access-cards" class="metric-grid empty">正在加载接入卡片...</div>
+                <div id="access-cards" class="metric-grid empty">正在加载接入详情...</div>
 
                 <form id="domain-form" class="settings-form compact-form">
                   <label class="field span-2">
@@ -206,8 +235,7 @@
                 </form>
 
                 <p class="muted footnote">
-                  提交前请确认域名 A/AAAA 记录已指向当前服务器，并且 nginx 可以继续占用
-                  <code>80/443</code>。
+                  提交前请确认域名 A/AAAA 记录已经指向当前服务器，并且 nginx 可以监听 80/443。
                 </p>
               </article>
 
@@ -216,11 +244,11 @@
                   <div>
                     <p class="section-kicker">Config</p>
                     <h2>运行配置</h2>
-                    <p class="muted">当前配置持久化保存到 SQLite；涉及运行参数的更新，重启后生效。</p>
+                    <p class="muted">运行配置持久化保存在 SQLite 中，修改后按需重启服务生效。</p>
                   </div>
                 </div>
 
-                <div id="config-summary" class="metric-grid empty">正在加载配置摘要...</div>
+                <div id="config-summary" class="metric-grid empty">正在加载运行配置...</div>
 
                 <form id="config-form" class="settings-form">
                   <label class="field">
@@ -245,19 +273,19 @@
                   <label class="field span-2">
                     <span>根目录</span>
                     <input id="config-agent-root" spellcheck="false" />
-                    <small class="field-hint">文件工作区只显示并操作这个目录边界内的内容。</small>
+                    <small class="field-hint">文件工作区不会越过这个目录边界。</small>
                   </label>
 
                   <label class="field span-2">
-                    <span>访问令牌</span>
+                    <span>Agent Token</span>
                     <input
                       id="config-agent-token"
                       type="password"
-                      placeholder="留空表示保持当前服务端令牌"
+                      placeholder="留空表示保持当前节点令牌"
                       spellcheck="false"
                       autocomplete="new-password"
                     />
-                    <small class="field-hint">页面不会回显服务器中已有令牌，填写后会更新成新令牌。</small>
+                    <small class="field-hint">仅用于节点接入、外部校验和下载签名，不再用于浏览器登录。</small>
                   </label>
 
                   <label class="field span-2">
@@ -265,14 +293,14 @@
                     <input
                       id="config-certbot-email"
                       type="email"
-                      placeholder="可选，用于证书通知"
+                      placeholder="可选，用于证书续期通知"
                       spellcheck="false"
                     />
                   </label>
 
                   <label class="toggle card-toggle">
                     <input id="config-allow-public" type="checkbox" />
-                    <span>允许临时通过 IP:端口 直接访问</span>
+                    <span>允许通过 IP:端口 直接访问</span>
                   </label>
 
                   <label class="toggle card-toggle">
@@ -282,7 +310,7 @@
 
                   <div class="form-actions span-2">
                     <button id="save-config" type="submit">保存运行配置</button>
-                    <button id="config-reset-token" type="button" class="secondary">重置访问令牌</button>
+                    <button id="config-reset-token" type="button" class="secondary">重置 Agent Token</button>
                   </div>
                 </form>
               </article>
@@ -296,7 +324,7 @@
                   <div>
                     <p class="section-kicker">Nodes</p>
                     <h2>节点目录</h2>
-                    <p class="muted">登记远程节点 URL、访问令牌和 WireGuard 地址。</p>
+                    <p class="muted">登记远程节点 URL、WireGuard 地址和节点访问令牌。</p>
                   </div>
                 </div>
 
@@ -319,18 +347,18 @@
                   </label>
 
                   <label class="field">
-                    <span>访问令牌</span>
+                    <span>节点 Token</span>
                     <input
                       id="server-token"
                       type="password"
                       spellcheck="false"
-                      placeholder="仅保存远程节点令牌，不会在这里回显"
+                      placeholder="用于验证目标节点的 Agent Token"
                     />
                   </label>
 
                   <label class="toggle card-toggle span-2">
                     <input id="server-enabled" type="checkbox" checked />
-                    <span>启用节点</span>
+                    <span>启用该节点</span>
                   </label>
 
                   <div class="form-actions span-2">
@@ -360,17 +388,17 @@
                 <div>
                   <p class="section-kicker">Logs</p>
                   <h2>运行日志</h2>
-                  <p class="muted">查看当前节点的 systemd 日志。</p>
+                  <p class="muted">查看当前节点的 systemd 日志，用于排查接入和运行期问题。</p>
                 </div>
                 <div class="section-actions">
-                  <span id="logs-service" class="ghost-chip">等待日志服务</span>
+                  <span id="logs-service" class="ghost-chip">等待日志服务信息</span>
                   <button id="refresh-logs" class="secondary">刷新</button>
                 </div>
               </div>
 
               <div class="logs-meta">
                 <span id="logs-summary" class="ghost-chip">正在加载日志摘要</span>
-                <span id="logs-cursor" class="ghost-chip">尚未建立游标</span>
+                <span id="logs-cursor" class="ghost-chip">等待游标</span>
               </div>
 
               <div class="log-level-switch" aria-label="日志级别">
@@ -379,7 +407,7 @@
                 <button id="log-level-error" class="log-level-tab" data-level="error">Error</button>
               </div>
 
-              <div id="logs-output" class="log-stream empty">正在加载日志内容...</div>
+              <div id="logs-output" class="log-stream empty">正在加载日志输出...</div>
             </article>
           </section>
 
@@ -389,60 +417,52 @@
                 <div>
                   <p class="section-kicker">Docs</p>
                   <h2>项目文档</h2>
-                  <p class="muted">用于集中说明项目定位、使用方式、开发结构、API 边界和关键概念。</p>
+                  <p class="muted">集中说明项目定位、开发结构、接口边界和关键概念。</p>
                 </div>
               </div>
 
               <div class="guide-grid">
                 <article class="guide-card">
                   <h3>项目定位</h3>
-                  <p>这是一个部署在目标 Linux 服务器上的单节点 agent 面板。</p>
-                  <p>它负责本机资源采集、文件管理、Docker 运行状态、日志查看和接入配置。</p>
-                  <p>当前节点目录仅负责登记远程节点信息，还不是统一代理执行层。</p>
+                  <p>当前项目以单机 agent 为核心，前端和 FastAPI API 由同一个服务一起部署。</p>
+                  <p>它负责当前节点的资源采集、文件交互、域名接入、节点目录和运行日志展示。</p>
                 </article>
 
                 <article class="guide-card">
-                  <h3>使用文档</h3>
-                  <p>1. 安装服务后，使用访问令牌登录面板。</p>
-                  <p>2. 在概览页查看资源、趋势和 Docker 状态。</p>
-                  <p>3. 在文件页浏览根目录边界内的文件，执行上传、下载、重命名和删除。</p>
-                  <p>4. 在接入页管理域名、监听、采样间隔和访问令牌。</p>
-                  <p>5. 在日志页查看 systemd 日志并按级别筛选。</p>
+                  <h3>登录与认证</h3>
+                  <p>浏览器通过本地管理员账号密码登录，服务端签发 HttpOnly 会话 Cookie。</p>
+                  <p>AGENT_TOKEN 不再作为浏览器登录凭据，仅用于节点验证、外部调用和签名下载。</p>
                 </article>
 
                 <article class="guide-card">
-                  <h3>开发文档</h3>
-                  <p>后端入口是 FastAPI，位于 <code>app/</code>；前端是静态页面和模块化 JS，位于 <code>static/</code>。</p>
-                  <p>资源采样、文件边界、接入状态、日志和 Docker 状态都由当前节点本机执行。</p>
-                  <p>配置和历史资源样本持久化到 SQLite，便于重启后继续查看趋势。</p>
+                  <h3>开发结构</h3>
+                  <p><code>app/</code> 保存 FastAPI 路由、服务和存储逻辑。</p>
+                  <p><code>static/</code> 保存面板前端、样式和交互脚本。</p>
+                  <p><code>scripts/</code> 保存安装、控制和辅助脚本。</p>
                 </article>
 
                 <article class="guide-card">
-                  <h3>接口调用</h3>
-                  <p>系统提供健康检查、登录会话、资源、文件、接入、节点和日志接口。</p>
-                  <p>浏览器通过登录会话调用这些 API，不再把令牌长期保存在本地。</p>
-                  <p>如果后续接入 manager，这些接口应继续作为 agent 本地能力暴露。</p>
+                  <h3>资源采集</h3>
+                  <p>资源概览区分当前值与 1m/5m 平滑值，并将历史样本持久化到 SQLite。</p>
+                  <p>当前值适合看瞬时状态，1m/5m 更适合看趋势，避免误把尖峰当成长期负载。</p>
                 </article>
 
                 <article class="guide-card">
-                  <h3>关键概念</h3>
-                  <p><strong>当前</strong> 表示最近一次采样值。</p>
-                  <p><strong>1m / 5m</strong> 表示最近 1 分钟和 5 分钟窗口内的平滑结果。</p>
-                  <p><strong>趋势图</strong> 显示所选时间范围内的历史采样点，范围越大图表分辨率会越粗。</p>
-                  <p><strong>AGENT_ROOT</strong> 是文件工作区允许访问的根目录边界。</p>
+                  <h3>文件工作区</h3>
+                  <p>文件操作严格限制在 AGENT_ROOT 内部，上传、下载、删除、重命名都走后端真实文件系统操作。</p>
+                  <p>如果服务账号没有系统权限，需要通过运行配置或受控授权方式修正，而不是绕过系统权限边界。</p>
                 </article>
 
                 <article class="guide-card">
-                  <h3>后续扩展</h3>
-                  <p>如果要管理 2-10 台服务器，建议保持“每台机器一个 agent”。</p>
-                  <p>WireGuard 更适合作为管理平面网络，让 agent 之间通过私网互通。</p>
-                  <p>真正的多节点统一执行需要额外的 manager / proxy 层，而不仅是节点登记。</p>
+                  <h3>节点目录</h3>
+                  <p>当前节点目录主要用于登记远程节点基础信息，包括 URL、WireGuard 地址和节点 Token。</p>
+                  <p>真正的多节点代理与统一调度仍需后续补充 manager / proxy 层。</p>
                 </article>
 
                 <article class="guide-card">
-                  <h3>仓库文档</h3>
-                  <p>更详细的开发和调用说明已写入仓库 <code>docs/</code> 目录。</p>
-                  <p>建议从 <code>README.md</code> 进入，再查看架构、使用、API 和概念说明文档。</p>
+                  <h3>文档入口</h3>
+                  <p>仓库内还提供 README、USAGE、DEVELOPMENT、API、CONCEPTS、ARCHITECTURE 等文档文件。</p>
+                  <p>前端文档页更适合快速查阅运行概念，仓库文档更适合后续开发和接口调用。</p>
                 </article>
               </div>
             </article>

@@ -1,24 +1,37 @@
-# API 文档
+# API 说明
 
-## 认证模型
+## 认证相关
 
-### 1. 健康检查
-
-- `GET /api/health`
-
-返回服务状态和是否启用鉴权。
-
-### 2. 登录会话
+### 浏览器会话
 
 - `GET /api/auth/session`
+- `POST /api/auth/register`
 - `POST /api/auth/login`
 - `POST /api/auth/logout`
 
-浏览器登录后使用服务端会话 Cookie 访问 API。
+说明：
 
-## 系统与接入
+- 首次注册后会创建本地管理员账号
+- 登录成功后服务端写入会话 Cookie
+- 后续浏览器通过 Cookie 调用受保护 API
 
+### Agent Token
+
+`AGENT_TOKEN` 不再用于浏览器登录。
+
+它当前用于：
+
+- 节点接入凭据
+- 外部 Bearer 校验预留
+- 文件签名下载链接
+
+## 系统信息
+
+- `GET /api/health`
 - `GET /api/agent`
+
+## 接入与运行配置
+
 - `GET /api/access`
 - `POST /api/access/domain`
 - `GET /api/config`
@@ -30,23 +43,28 @@
 - `GET /api/resources`
 - `GET /api/resources/history?range=15m|1h|6h|24h|7d`
 
-### 历史接口语义
+历史接口会返回：
 
-- `interval_seconds`：原始采样周期
-- `resolution_seconds`：当前图表分辨率
-- `range_key`：当前查询范围
-- `points`：趋势点
-- `summary`：当前值和 `1m / 5m`
+- 当前采样间隔
+- 图表实际分辨率
+- 当前查看时间范围
+- 采样点列表
+- `current / 1m / 5m` 汇总
 
 ## 文件
 
-- `GET /api/files?path=/`
+- `GET /api/files?path=/target`
 - `POST /api/files/mkdir`
 - `POST /api/files/rename`
 - `POST /api/files/upload?path=/target`
 - `DELETE /api/files?path=/target`
-- `POST /api/files/download-link`
+- `GET /api/files/download-link`
 - `GET /api/files/download`
+
+说明：
+
+- 文件操作限制在 `AGENT_ROOT` 内
+- 下载走短时签名链接
 
 ## 运行时
 
@@ -60,6 +78,7 @@
 - `PUT /api/servers/{id}`
 - `DELETE /api/servers/{id}`
 
-## 说明
+说明：
 
-当前 `servers` 相关接口只负责节点登记，不会直接代理远程执行资源、文件或日志操作。
+- 当前只保存节点元数据
+- 尚未完成远程资源/文件/日志代理执行

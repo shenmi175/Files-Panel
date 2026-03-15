@@ -112,6 +112,15 @@ def initialize_storage(default_config: dict[str, str] | None = None) -> None:
                 configured_at TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS admin_account (
+                singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+                username TEXT NOT NULL,
+                password_hash TEXT NOT NULL,
+                password_salt TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS servers (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -267,6 +276,62 @@ def save_access_state(payload: dict[str, Any]) -> None:
                 1 if payload.get("https_enabled") else 0,
                 payload.get("configured_at"),
             ),
+        )
+
+
+def load_admin_account() -> dict[str, Any] | None:
+    with connect() as connection:
+        row = connection.execute(
+            """
+            SELECT
+                username,
+                password_hash,
+                password_salt,
+                created_at,
+                updated_at
+            FROM admin_account
+            WHERE singleton_id = 1
+            """
+        ).fetchone()
+    if row is None:
+        return None
+    return {
+        "username": str(row["username"]),
+        "password_hash": str(row["password_hash"]),
+        "password_salt": str(row["password_salt"]),
+        "created_at": str(row["created_at"]),
+        "updated_at": str(row["updated_at"]),
+    }
+
+
+def admin_account_exists() -> bool:
+    return load_admin_account() is not None
+
+
+def save_admin_account(*, username: str, password_hash: str, password_salt: str) -> None:
+    now = utc_now()
+    with connect() as connection:
+        existing_created_at = connection.execute(
+            "SELECT created_at FROM admin_account WHERE singleton_id = 1"
+        ).fetchone()
+        created_at = str(existing_created_at["created_at"]) if existing_created_at else now
+        connection.execute(
+            """
+            INSERT INTO admin_account (
+                singleton_id,
+                username,
+                password_hash,
+                password_salt,
+                created_at,
+                updated_at
+            ) VALUES (1, ?, ?, ?, ?, ?)
+            ON CONFLICT(singleton_id) DO UPDATE SET
+                username = excluded.username,
+                password_hash = excluded.password_hash,
+                password_salt = excluded.password_salt,
+                updated_at = excluded.updated_at
+            """,
+            (username, password_hash, password_salt, created_at, now),
         )
 
 

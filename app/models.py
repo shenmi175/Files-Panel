@@ -9,20 +9,30 @@ class HealthResponse(BaseModel):
     status: str
     timestamp: str
     auth_enabled: bool
+    registration_required: bool
 
 
 class LoginRequest(BaseModel):
-    token: str = Field(min_length=1, max_length=512)
+    username: str = Field(min_length=3, max_length=64)
+    password: str = Field(min_length=8, max_length=512)
+
+
+class RegisterRequest(BaseModel):
+    username: str = Field(min_length=3, max_length=64)
+    password: str = Field(min_length=8, max_length=512)
 
 
 class LoginResponse(BaseModel):
     message: str
     authenticated: bool
+    username: str | None = None
 
 
 class SessionStatusResponse(BaseModel):
     auth_enabled: bool
     authenticated: bool
+    registration_required: bool
+    username: str | None = None
 
 
 class AgentInfo(BaseModel):

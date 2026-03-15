@@ -70,8 +70,22 @@ function setLoginMessage(message, type = "info") {
   dom.loginMessageEl.className = `auth-feedback ${type}`;
 }
 
+function renderLoginMode() {
+  const isRegistration = state.registrationRequired;
+  dom.loginTitleEl.textContent = isRegistration ? "首次注册管理员账号" : "管理员登录";
+  dom.loginSubtitleEl.textContent = isRegistration
+    ? "当前节点尚未注册本地管理员账号，请先创建一个管理员账号并进入控制面板。"
+    : "使用本地管理员账号密码登录控制面板。浏览器只保存 HttpOnly 会话，不再保存访问令牌。";
+  dom.loginConfirmFieldEl.classList.toggle("hidden", !isRegistration);
+  dom.loginSubmitLabelEl.textContent = isRegistration ? "注册并进入" : "登录";
+  dom.loginPasswordInput.autocomplete = isRegistration ? "new-password" : "current-password";
+  if (!isRegistration) {
+    dom.loginConfirmInput.value = "";
+  }
+}
+
 function resetAgentSummary() {
-  dom.agentNameEl.textContent = "待登录";
+  dom.agentNameEl.textContent = "未加载";
   dom.agentHostnameEl.textContent = "-";
   dom.agentUserEl.textContent = "-";
   updateHeroAccess();
@@ -102,9 +116,12 @@ function showLoginView(message = "") {
   dom.logoutButton.classList.add("hidden");
   clearStatus();
   clearProtectedViews(AUTH_REQUIRED_MESSAGE);
-  setLoginMessage(message || "请输入访问令牌后登录控制面板。");
+  renderLoginMode();
+  setLoginMessage(
+    message || (state.registrationRequired ? "请先注册一个本地管理员账号。" : "请输入账号密码登录。")
+  );
   window.setTimeout(() => {
-    dom.loginTokenInput?.focus();
+    dom.loginUsernameInput?.focus();
   }, 0);
 }
 
@@ -130,6 +147,7 @@ async function loadHealth() {
   });
   const payload = await response.json();
   state.authEnabled = Boolean(payload.auth_enabled);
+  state.registrationRequired = Boolean(payload.registration_required);
   if (!state.authEnabled) {
     state.isAuthenticated = true;
   }
@@ -146,7 +164,10 @@ async function loadSession() {
     credentials: "same-origin",
   });
   const payload = await response.json();
+  state.authEnabled = Boolean(payload.auth_enabled);
   state.isAuthenticated = Boolean(payload.authenticated);
+  state.registrationRequired = Boolean(payload.registration_required);
+  state.sessionUsername = payload.username || null;
 }
 
 async function loadAgent() {
@@ -262,7 +283,7 @@ function scheduleAutoRefresh() {
           await loadAccess();
       }
     } catch {
-      // Keep the background refresh alive even if one request fails.
+      // Keep background refresh alive even if one request fails.
     } finally {
       scheduleAutoRefresh();
     }
@@ -300,24 +321,37 @@ async function enterAuthenticatedApp({
 
 function handleUnauthenticatedState(message) {
   state.isAuthenticated = false;
+  state.sessionUsername = null;
   resetProtectedState();
   showLoginView(message);
   scheduleAutoRefresh();
 }
 
-async function submitLogin(event) {
+async function submitAuth(event) {
   event.preventDefault();
-  const token = dom.loginTokenInput.value.trim();
-  if (!token) {
-    setLoginMessage("请输入访问令牌。", "error");
+  const username = dom.loginUsernameInput.value.trim();
+  const password = dom.loginPasswordInput.value;
+  const confirmPassword = dom.loginConfirmInput.value;
+
+  if (!username) {
+    setLoginMessage("请输入管理员账号。", "error");
+    return;
+  }
+  if (!password) {
+    setLoginMessage("请输入登录密码。", "error");
+    return;
+  }
+  if (state.registrationRequired && password !== confirmPassword) {
+    setLoginMessage("两次输入的密码不一致。", "error");
     return;
   }
 
-  const response = await fetch("/api/auth/login", {
+  const endpoint = state.registrationRequired ? "/api/auth/register" : "/api/auth/login";
+  const response = await fetch(endpoint, {
     method: "POST",
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token }),
+    body: JSON.stringify({ username, password }),
   });
   const payload = await parseJsonResponse(response);
   if (!response.ok) {
@@ -326,8 +360,12 @@ async function submitLogin(event) {
   }
 
   state.isAuthenticated = true;
+  state.registrationRequired = false;
+  state.sessionUsername = payload.username || username;
   state.preloadStarted = false;
-  dom.loginTokenInput.value = "";
+  dom.loginUsernameInput.value = "";
+  dom.loginPasswordInput.value = "";
+  dom.loginConfirmInput.value = "";
   setLoginMessage("");
   await enterAuthenticatedApp({
     forceLogsReset: false,
@@ -342,10 +380,11 @@ async function logout() {
       credentials: "same-origin",
     });
   } catch {
-    // The session cookie is best-effort cleared server-side; continue locally.
+    // Best-effort logout.
   }
 
-  handleUnauthenticatedState("登录会话已退出。");
+  state.registrationRequired = false;
+  handleUnauthenticatedState("已退出登录。");
 }
 
 async function handleTopLevelViewChange(view) {
@@ -373,7 +412,7 @@ async function handleTopLevelViewChange(view) {
 
 function wireEvents() {
   dom.loginForm.addEventListener("submit", (event) => {
-    submitLogin(event).catch((error) => setLoginMessage(error.message, "error"));
+    submitAuth(event).catch((error) => setLoginMessage(error.message, "error"));
   });
   dom.logoutButton?.addEventListener("click", () => {
     logout().catch((error) => setLoginMessage(error.message, "error"));
@@ -434,7 +473,7 @@ function wireEvents() {
     );
   });
   window.addEventListener("auth:expired", (event) => {
-    const message = event.detail?.message || "登录已失效，请重新输入访问令牌。";
+    const message = event.detail?.message || "登录已失效，请重新输入账号密码。";
     handleUnauthenticatedState(message);
   });
 }
@@ -457,7 +496,11 @@ async function boot() {
         forceFilesReload: state.activeView === "files",
       });
     } else {
-      showLoginView("请输入访问令牌后登录控制面板。");
+      showLoginView(
+        state.registrationRequired
+          ? "请先注册一个本地管理员账号。"
+          : "请输入账号密码后登录控制面板。"
+      );
     }
   } catch (error) {
     if (state.authEnabled && !state.isAuthenticated) {
