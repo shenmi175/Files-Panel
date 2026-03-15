@@ -4,7 +4,11 @@ import uvicorn
 from fastapi import FastAPI
 
 from app.core.settings import SETTINGS
-from app.routes import access_router, files_router, resources_router, runtime_router, system_router
+from app.routes.access import router as access_router
+from app.routes.files import router as files_router
+from app.routes.resources import router as resources_router
+from app.routes.runtime import router as runtime_router
+from app.routes.system import router as system_router
 from app.services import resources as resource_service
 
 

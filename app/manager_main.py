@@ -5,16 +5,14 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
 from app.core.settings import SETTINGS, STATIC_DIR
-from app.routes import (
-    access_router,
-    auth_router,
-    bootstrap_router,
-    files_router,
-    resources_router,
-    runtime_router,
-    servers_router,
-    system_router,
-)
+from app.routes.access import router as access_router
+from app.routes.auth import router as auth_router
+from app.routes.bootstrap import router as bootstrap_router
+from app.routes.files import router as files_router
+from app.routes.resources import router as resources_router
+from app.routes.runtime import router as runtime_router
+from app.routes.servers import router as servers_router
+from app.routes.system import router as system_router
 from app.services import resources as resource_service
 from app.services import servers as server_service
 
