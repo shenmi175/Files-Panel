@@ -1272,7 +1272,7 @@ h3 {
 
 .update-version-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 14px;
 }
 
@@ -1284,6 +1284,7 @@ h3 {
   border: 1px solid var(--line);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.68);
+  min-height: 92px;
 }
 
 .update-version-card span {
@@ -1300,10 +1301,65 @@ h3 {
   gap: 10px;
 }
 
-#node-update-status {
-  width: fit-content;
-  max-width: 100%;
-  line-height: 1.5;
+.update-status-list {
+  display: grid;
+  gap: 10px;
+}
+
+.update-status-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.update-status-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 9px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.update-status-chip.is-success {
+  border-color: rgba(29, 92, 77, 0.14);
+  background: rgba(29, 92, 77, 0.1);
+}
+
+.update-status-chip.is-warning {
+  border-color: rgba(188, 143, 45, 0.18);
+  background: rgba(188, 143, 45, 0.1);
+}
+
+.update-status-chip.is-danger {
+  border-color: rgba(176, 69, 54, 0.18);
+  background: rgba(176, 69, 54, 0.1);
+}
+
+.update-status-chip.is-info {
+  border-color: rgba(67, 106, 160, 0.18);
+  background: rgba(67, 106, 160, 0.1);
+}
+
+.update-status-note {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--muted);
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.node-update-panel .compact-form {
+  align-items: end;
+}
+
+.node-update-panel .card-toggle {
+  min-height: 56px;
 }
 
 @media (max-width: 720px) {

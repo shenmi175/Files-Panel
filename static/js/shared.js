@@ -159,45 +159,45 @@ function ensureNodeUpdatePanel() {
   panel.innerHTML = `
     <div class="section-head">
       <div>
-        <p class="section-kicker">Updates</p>
-        <h2>Auto Update</h2>
-        <p id="node-update-summary" class="muted">等待读取更新状态。</p>
+        <p class="section-kicker">版本更新</p>
+        <h2>自动更新</h2>
+        <p id="node-update-summary" class="muted" aria-live="polite">正在读取更新状态。</p>
       </div>
       <div class="section-actions">
-        <button id="refresh-node-update-status" type="button" class="secondary">Refresh Status</button>
+        <button id="refresh-node-update-status" type="button" class="secondary">刷新状态</button>
       </div>
     </div>
     <div class="update-version-grid">
       <div class="update-version-card">
-        <span>Current Version</span>
+        <span>当前版本</span>
         <strong id="node-update-current-version">-</strong>
       </div>
       <div class="update-version-card">
-        <span>Latest Version</span>
+        <span>最新版本</span>
         <strong id="node-update-latest-version">-</strong>
       </div>
       <div class="update-version-card">
-        <span>Update State</span>
-        <strong id="node-update-availability">Checking...</strong>
+        <span>更新状态</span>
+        <strong id="node-update-availability">检查中</strong>
       </div>
     </div>
-    <div id="node-update-status" class="ghost-chip">Loading update capability...</div>
+    <div id="node-update-status" class="update-status-list" aria-live="polite">正在读取更新能力。</div>
     <form id="node-update-form" class="settings-form compact-form">
       <label class="field">
-        <span>Update mode</span>
+        <span>更新方式</span>
         <select id="node-update-mode">
-          <option value="quick" selected>quick</option>
-          <option value="redeploy">redeploy</option>
-          <option value="full-install">full-install</option>
+          <option value="quick" selected>快速同步</option>
+          <option value="redeploy">重新部署</option>
+          <option value="full-install">完整安装</option>
         </select>
       </label>
       <label class="toggle card-toggle">
         <input id="node-update-pull-latest" type="checkbox" checked />
-        <span>Run <code>git pull --ff-only</code> first</span>
+        <span>更新前先执行 <code>git pull --ff-only</code></span>
       </label>
       <div class="form-actions span-2">
-        <button id="trigger-node-update" type="submit">Update Now</button>
-        <button id="trigger-all-node-updates" type="button" class="secondary">Update All Agents</button>
+        <button id="trigger-node-update" type="submit">立即更新</button>
+        <button id="trigger-all-node-updates" type="button" class="secondary">更新所有 Agent</button>
       </div>
     </form>
   `;
@@ -695,16 +695,18 @@ export function setUpdatePlaceholder(message) {
     dom.nodeUpdateLatestVersionEl.textContent = "-";
   }
   if (dom.nodeUpdateAvailabilityEl) {
-    dom.nodeUpdateAvailabilityEl.textContent = "Unavailable";
+    dom.nodeUpdateAvailabilityEl.textContent = "不可用";
   }
   if (dom.nodeUpdateStatusEl) {
     dom.nodeUpdateStatusEl.textContent = message;
   }
   if (dom.triggerNodeUpdateButton) {
     dom.triggerNodeUpdateButton.disabled = true;
+    dom.triggerNodeUpdateButton.textContent = "立即更新";
   }
   if (dom.triggerAllNodeUpdatesButton) {
     dom.triggerAllNodeUpdatesButton.disabled = true;
+    dom.triggerAllNodeUpdatesButton.textContent = "更新所有 Agent";
   }
 }
 

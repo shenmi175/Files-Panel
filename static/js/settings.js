@@ -125,6 +125,182 @@ function formatBootstrapTimestamp(rawValue) {
   return date.toLocaleString("zh-CN", { hour12: false });
 }
 
+function formatUpdateTimestamp(rawValue) {
+  if (!rawValue) {
+    return "";
+  }
+  const date = new Date(rawValue);
+  if (Number.isNaN(date.getTime())) {
+    return rawValue;
+  }
+  return date.toLocaleString("zh-CN", { hour12: false });
+}
+
+function currentUpdateTargetLabel() {
+  return state.selectedServerName || "当前管理机";
+}
+
+function updateModeLabel(mode) {
+  switch (mode) {
+    case "quick":
+      return "快速同步";
+    case "redeploy":
+      return "重新部署";
+    case "full-install":
+      return "完整安装";
+    default:
+      return mode || "-";
+  }
+}
+
+function updateRunStateLabel(status) {
+  switch (String(status || "").toLowerCase()) {
+    case "idle":
+      return "空闲";
+    case "scheduled":
+      return "已排队";
+    case "running":
+      return "更新中";
+    case "succeeded":
+      return "已完成";
+    case "failed":
+      return "失败";
+    default:
+      return status || "";
+  }
+}
+
+function updateAvailabilityLabel(payload) {
+  if (!payload?.auto_update_available) {
+    return "不可用";
+  }
+  if (payload?.update_available) {
+    return "有新版本";
+  }
+  if (payload?.current_version && payload?.latest_version) {
+    return "已是最新";
+  }
+  return "检查失败";
+}
+
+function translateUpdateMessage(message) {
+  const raw = String(message || "").trim();
+  if (!raw) {
+    return "";
+  }
+
+  const replacements = [
+    ["update scheduled", "已安排更新任务"],
+    ["update running", "更新任务执行中"],
+    ["update completed", "更新完成"],
+    ["update failed; inspect update.log", "更新失败，请检查 update.log"],
+    [
+      "automatic update is unavailable on this node; reinstall once from the source repository first",
+      "当前节点暂不可自动更新，请先从源码仓库重新安装一次。",
+    ],
+    [
+      "this node has no linked git repository; disable pull-latest or reinstall from a git checkout first",
+      "当前节点未关联 Git 仓库；请关闭更新前拉取，或从 Git 工作区重新安装。",
+    ],
+    [
+      "an update is already running on this node",
+      "当前节点已有更新任务在运行。",
+    ],
+    ["no enabled remote nodes are configured", "没有启用的远程节点。"],
+    ["git is not installed on this node", "当前节点未安装 Git。"],
+    ["automatic update source directory is invalid", "自动更新源码目录无效"],
+    ["source directory is not a git repository", "源码目录不是 Git 仓库"],
+  ];
+
+  for (const [source, translated] of replacements) {
+    if (raw === source) {
+      return translated;
+    }
+    if (raw.startsWith(`${source}:`)) {
+      return `${translated}：${raw.slice(source.length + 1).trim()}`;
+    }
+  }
+
+  return raw;
+}
+
+function updateToneForRunState(status) {
+  switch (String(status || "").toLowerCase()) {
+    case "scheduled":
+    case "running":
+      return "info";
+    case "succeeded":
+      return "success";
+    case "failed":
+      return "danger";
+    default:
+      return "neutral";
+  }
+}
+
+function renderUpdateStatusChip(label, tone = "neutral") {
+  return `<span class="update-status-chip is-${escapeHtml(tone)}">${escapeHtml(label)}</span>`;
+}
+
+function buildUpdateStatusMarkup(payload) {
+  const chips = [];
+
+  if (!payload?.auto_update_available) {
+    if (!payload?.project_dir_valid) {
+      chips.push(renderUpdateStatusChip("源码目录无效", "danger"));
+    } else {
+      chips.push(renderUpdateStatusChip("缺少提权更新能力", "danger"));
+    }
+  } else if (payload?.update_available) {
+    chips.push(renderUpdateStatusChip("发现新版本", "warning"));
+  } else if (payload?.current_version && payload?.latest_version) {
+    chips.push(renderUpdateStatusChip("已是最新版本", "success"));
+  } else {
+    chips.push(renderUpdateStatusChip("版本检查暂不可用", "neutral"));
+  }
+
+  if (payload?.git_repo) {
+    chips.push(renderUpdateStatusChip("已关联 Git 仓库", "success"));
+  } else if (payload?.project_dir_valid) {
+    chips.push(renderUpdateStatusChip("未关联 Git 仓库", "warning"));
+  }
+
+  if (payload?.status) {
+    chips.push(
+      renderUpdateStatusChip(
+        `任务：${updateRunStateLabel(payload.status)}`,
+        updateToneForRunState(payload.status)
+      )
+    );
+  }
+
+  if (payload?.mode) {
+    chips.push(renderUpdateStatusChip(`方式：${updateModeLabel(payload.mode)}`));
+  }
+
+  if (payload?.pull_latest !== null && payload?.pull_latest !== undefined) {
+    chips.push(
+      renderUpdateStatusChip(payload.pull_latest ? "更新前执行 Git 拉取" : "跳过 Git 拉取")
+    );
+  }
+
+  if (payload?.latest_checked_at) {
+    chips.push(
+      renderUpdateStatusChip(`最近检查：${formatUpdateTimestamp(payload.latest_checked_at)}`)
+    );
+  }
+
+  const translatedMessage = translateUpdateMessage(payload?.message);
+  const note = translatedMessage
+    ? `<p class="update-status-note">${escapeHtml(translatedMessage)}</p>`
+    : "";
+
+  return `
+    <div class="update-status-badges">${chips.join("")}</div>
+    ${note}
+  `;
+}
+
 async function copyTextWithFallback(text, promptMessage) {
   if (!text) {
     return false;
@@ -526,9 +702,12 @@ export function renderUpdateStatus(payload) {
   state.updateStatus = payload;
 
   if (dom.nodeUpdateSummaryEl) {
-    const targetLabel = state.selectedServerName || "local manager";
-    const sourceLabel = payload?.source_dir || "not linked";
-    dom.nodeUpdateSummaryEl.textContent = `${targetLabel}: source ${sourceLabel}`;
+    const targetLabel = currentUpdateTargetLabel();
+    const sourceLabel = payload?.source_dir || "未关联源码目录";
+    const checkedAt = payload?.latest_checked_at
+      ? ` · 最近检查 ${formatUpdateTimestamp(payload.latest_checked_at)}`
+      : "";
+    dom.nodeUpdateSummaryEl.textContent = `目标节点：${targetLabel} · 源码目录：${sourceLabel}${checkedAt}`;
   }
 
   if (dom.nodeUpdateCurrentVersionEl) {
@@ -536,26 +715,26 @@ export function renderUpdateStatus(payload) {
   }
 
   if (dom.nodeUpdateLatestVersionEl) {
-    dom.nodeUpdateLatestVersionEl.textContent = payload?.latest_version || "-";
+    dom.nodeUpdateLatestVersionEl.textContent = payload?.latest_version || "未获取";
   }
 
   if (dom.nodeUpdateAvailabilityEl) {
-    if (!payload?.auto_update_available) {
-      dom.nodeUpdateAvailabilityEl.textContent = "Unavailable";
-    } else if (payload?.update_available) {
-      dom.nodeUpdateAvailabilityEl.textContent = "Update Available";
-    } else if (payload?.current_version && payload?.latest_version) {
-      dom.nodeUpdateAvailabilityEl.textContent = "Up to Date";
-    } else {
-      dom.nodeUpdateAvailabilityEl.textContent = "Check Failed";
-    }
+    dom.nodeUpdateAvailabilityEl.textContent = updateAvailabilityLabel(payload);
+  }
+
+  if (dom.nodeUpdateModeInput && payload?.mode) {
+    setValue(dom.nodeUpdateModeInput, payload.mode, { skipWhileFocused: true });
+  }
+
+  if (dom.nodeUpdatePullLatestInput && payload?.pull_latest !== null && payload?.pull_latest !== undefined) {
+    setChecked(dom.nodeUpdatePullLatestInput, payload.pull_latest, { skipWhileFocused: true });
   }
 
   if (dom.triggerNodeUpdateButton) {
     const status = String(payload?.status || "").toLowerCase();
     const busy = status === "scheduled" || status === "running";
     dom.triggerNodeUpdateButton.disabled = !payload?.auto_update_available || busy;
-    dom.triggerNodeUpdateButton.textContent = busy ? "Update Running" : "Update Now";
+    dom.triggerNodeUpdateButton.textContent = busy ? "更新进行中" : "立即更新";
   }
 
   if (dom.triggerAllNodeUpdatesButton) {
@@ -567,31 +746,7 @@ export function renderUpdateStatus(payload) {
     return;
   }
 
-  const parts = [];
-  if (payload?.update_available) {
-    parts.push("update available");
-  } else if (payload?.current_version && payload?.latest_version) {
-    parts.push("already latest");
-  } else {
-    parts.push(payload?.auto_update_available ? "version check unavailable" : "auto-update unavailable");
-  }
-  if (payload?.git_repo) {
-    parts.push("git repo linked");
-  } else if (payload?.project_dir_valid) {
-    parts.push("no git repo");
-  } else {
-    parts.push("source dir invalid");
-  }
-  if (payload?.status) {
-    parts.push(`status: ${payload.status}`);
-  }
-  if (payload?.mode) {
-    parts.push(`mode: ${payload.mode}`);
-  }
-  if (payload?.message) {
-    parts.push(payload.message);
-  }
-  dom.nodeUpdateStatusEl.textContent = parts.join(" · ");
+  setInnerHTML(dom.nodeUpdateStatusEl, buildUpdateStatusMarkup(payload));
 }
 
 export async function loadUpdateStatus() {
@@ -685,7 +840,7 @@ export async function refreshSettings({ includeConfig = true, includeServers = t
   }
   if (includeServers && results[4].status === "rejected") {
     state.updateStatusLoaded = false;
-    setUpdatePlaceholder(normalizeFeatureError(results[4].reason, "Auto Update"));
+    setUpdatePlaceholder(normalizeFeatureError(results[4].reason, "自动更新"));
   }
 }
 
@@ -885,7 +1040,7 @@ export async function triggerNodeUpdate(event) {
     });
     renderUpdateStatus(response.status);
     showStatus(
-      `${state.selectedServerName || "local manager"} update scheduled: ${payload.mode}`,
+      `已为${currentUpdateTargetLabel()}安排${updateModeLabel(payload.mode)}`,
       "info",
       { autoClearMs: 8000 }
     );
@@ -901,20 +1056,22 @@ export async function triggerNodeUpdate(event) {
       loadUpdateStatus().catch(() => {});
     }, 5000);
   } catch (error) {
-    showStatus(error.message, "error");
+    showStatus(translateUpdateMessage(error.message), "error");
   }
 }
 
 export async function triggerAllNodeUpdates() {
   const enabledRemoteNodes = state.servers.filter((item) => !item.is_local && item.enabled);
   if (!enabledRemoteNodes.length) {
-    showStatus("No enabled remote agent nodes available", "error");
+    showStatus("没有可更新的远程 Agent 节点", "error");
     return;
   }
 
   if (
     !window.confirm(
-      `Schedule update for ${enabledRemoteNodes.length} remote agent node(s)? Manager will not be updated by this action.`
+      `确认对 ${enabledRemoteNodes.length} 个远程 Agent 节点执行${updateModeLabel(
+        dom.nodeUpdateModeInput?.value || "quick"
+      )}吗？当前管理机不会包含在这次批量更新中。`
     )
   ) {
     return;
@@ -933,19 +1090,19 @@ export async function triggerAllNodeUpdates() {
       body: JSON.stringify(payload),
     });
 
-    const summary = `${response.scheduled_nodes}/${response.total_nodes} agent nodes scheduled`;
+    const summary = `已安排 ${response.scheduled_nodes}/${response.total_nodes} 个 Agent 节点更新`;
     const firstFailure = Array.isArray(response.results)
       ? response.results.find((item) => !item.scheduled)
       : null;
     showStatus(
       firstFailure
-        ? `${summary}; ${firstFailure.server_name}: ${firstFailure.message}`
-        : `${summary}; mode=${response.mode}`,
+        ? `${summary}；${firstFailure.server_name}：${translateUpdateMessage(firstFailure.message)}`
+        : `${summary}；方式：${updateModeLabel(response.mode)}`,
       firstFailure ? "info" : "success",
       { autoClearMs: 10000 }
     );
   } catch (error) {
-    showStatus(error.message, "error");
+    showStatus(translateUpdateMessage(error.message), "error");
   } finally {
     if (dom.triggerAllNodeUpdatesButton) {
       const hasRemoteNodes = state.servers.some((item) => !item.is_local && item.enabled);
