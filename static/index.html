@@ -12,9 +12,7 @@
         <div class="login-copy">
           <p class="eyebrow">Python + FastAPI Control Plane</p>
           <h1 id="login-title">文件与资源控制面板</h1>
-          <p id="login-subtitle" class="muted">
-            使用本地管理员账号登录控制面板。浏览器仅保存 HttpOnly 会话，不再使用访问令牌直接登录。
-          </p>
+          <p id="login-subtitle" class="muted">使用管理员账号登录。</p>
         </div>
 
         <form id="login-form" class="login-form">
@@ -56,11 +54,6 @@
           </button>
         </form>
 
-        <div id="login-notes" class="login-notes">
-          <p class="muted">首次使用时先注册一个本地管理员账号，之后使用账号密码登录。</p>
-          <p class="muted">AGENT_TOKEN 仅用于节点接入、外部校验和签名下载，不再用于浏览器登录。</p>
-        </div>
-
         <div id="login-message" class="auth-feedback hidden"></div>
       </article>
     </section>
@@ -71,9 +64,6 @@
           <div class="sidebar-brand">
             <p class="eyebrow">Node Workspace</p>
             <h2>节点工作台</h2>
-            <p class="muted">
-              当前页面默认管理本机 agent。远程节点现在仍以目录登记为主，后续可继续接入多节点代理能力。
-            </p>
           </div>
 
           <nav class="view-switch view-switch-sidebar" aria-label="主菜单">
@@ -94,9 +84,6 @@
               <div class="hero-copy">
                 <p class="eyebrow">Python + FastAPI Control Plane</p>
                 <h1>文件与资源控制面板</h1>
-                <p class="muted">
-                  管理当前节点的资源、文件、接入、节点目录和运行日志。
-                </p>
               </div>
             </div>
 
@@ -169,7 +156,6 @@
                   <p id="active-path" class="muted">等待路径信息</p>
                 </div>
                 <div class="section-actions">
-                  <span class="ghost-chip">双击目录进入，单击条目后再执行操作</span>
                   <button id="go-up" class="secondary">上一级</button>
                 </div>
               </div>
@@ -177,7 +163,6 @@
               <div class="file-header">
                 <div class="path-stack">
                   <div id="path-breadcrumbs" class="breadcrumbs"></div>
-                  <p class="toolbar-note">名称、类型、大小和修改时间会同时显示，便于快速确认当前条目。</p>
                 </div>
                 <label class="toggle">
                   <input id="show-hidden-toggle" type="checkbox" />
@@ -233,10 +218,6 @@
                   </label>
                   <button id="configure-domain" type="submit">接入域名并启用 HTTPS</button>
                 </form>
-
-                <p class="muted footnote">
-                  提交前请确认域名 A/AAAA 记录已经指向当前服务器，并且 nginx 可以监听 80/443。
-                </p>
               </article>
 
               <article class="panel section-panel">
@@ -244,7 +225,6 @@
                   <div>
                     <p class="section-kicker">Config</p>
                     <h2>运行配置</h2>
-                    <p class="muted">运行配置持久化保存在 SQLite 中，修改后按需重启服务生效。</p>
                   </div>
                 </div>
 
@@ -273,7 +253,6 @@
                   <label class="field span-2">
                     <span>根目录</span>
                     <input id="config-agent-root" spellcheck="false" />
-                    <small class="field-hint">文件工作区不会越过这个目录边界。</small>
                   </label>
 
                   <label class="field span-2">
@@ -285,7 +264,6 @@
                       spellcheck="false"
                       autocomplete="new-password"
                     />
-                    <small class="field-hint">仅用于节点接入、外部校验和下载签名，不再用于浏览器登录。</small>
                   </label>
 
                   <label class="field span-2">
@@ -324,7 +302,6 @@
                   <div>
                     <p class="section-kicker">Nodes</p>
                     <h2>节点目录</h2>
-                    <p class="muted">登记远程节点 URL、WireGuard 地址和节点访问令牌。</p>
                   </div>
                 </div>
 
@@ -388,7 +365,6 @@
                 <div>
                   <p class="section-kicker">Logs</p>
                   <h2>运行日志</h2>
-                  <p class="muted">查看当前节点的 systemd 日志，用于排查接入和运行期问题。</p>
                 </div>
                 <div class="section-actions">
                   <span id="logs-service" class="ghost-chip">等待日志服务信息</span>
@@ -417,52 +393,75 @@
                 <div>
                   <p class="section-kicker">Docs</p>
                   <h2>项目文档</h2>
-                  <p class="muted">集中说明项目定位、开发结构、接口边界和关键概念。</p>
+                  <p class="muted">主界面说明、操作提示和系统概念统一放在这里。</p>
                 </div>
               </div>
 
               <div class="guide-grid">
                 <article class="guide-card">
-                  <h3>项目定位</h3>
-                  <p>当前项目以单机 agent 为核心，前端和 FastAPI API 由同一个服务一起部署。</p>
-                  <p>它负责当前节点的资源采集、文件交互、域名接入、节点目录和运行日志展示。</p>
+                  <h3>登录与认证</h3>
+                  <p>浏览器通过本地管理员账号密码登录，服务端签发 HttpOnly 会话 Cookie。</p>
+                  <p>首次使用时先注册管理员账号。AGENT_TOKEN 仅用于节点接入、外部校验和签名下载。</p>
                 </article>
 
                 <article class="guide-card">
-                  <h3>登录与认证</h3>
-                  <p>浏览器通过本地管理员账号密码登录，服务端签发 HttpOnly 会话 Cookie。</p>
-                  <p>AGENT_TOKEN 不再作为浏览器登录凭据，仅用于节点验证、外部调用和签名下载。</p>
+                  <h3>界面定位</h3>
+                  <p>当前页面默认管理本机节点，首页展示当前节点的资源、文件、接入、节点目录和日志。</p>
+                  <p>远程节点以目录登记和切换查看为主，文档页用于集中承载说明性信息。</p>
+                </article>
+
+                <article class="guide-card">
+                  <h3>文件工作区</h3>
+                  <p>双击目录进入，单击条目后再执行上传、重命名、下载或删除操作。</p>
+                  <p>列表同时展示名称、类型、权限、大小和修改时间，便于快速确认当前条目。</p>
+                </article>
+
+                <article class="guide-card">
+                  <h3>文件浏览模式</h3>
+                  <p>工作区模式受 AGENT_ROOT 目录边界限制，适合日常文件管理。</p>
+                  <p>系统只读模式仅允许列目录和下载文件，不允许上传、删除、重命名或新建目录。</p>
+                </article>
+
+                <article class="guide-card">
+                  <h3>接入与域名</h3>
+                  <p>提交域名前请确认 A/AAAA 记录已经指向当前服务器，并且 nginx 可以监听 80/443。</p>
+                  <p>接入页展示当前监听、目标监听、外部入口以及 HTTPS 相关状态。</p>
+                </article>
+
+                <article class="guide-card">
+                  <h3>运行配置</h3>
+                  <p>运行配置持久化保存在 SQLite 中，修改后按需重启服务生效。</p>
+                  <p>AGENT_ROOT 会限制文件工作区边界，Agent Token 不再作为浏览器登录凭据。</p>
+                </article>
+
+                <article class="guide-card">
+                  <h3>节点与 WireGuard</h3>
+                  <p>节点目录用于登记远程节点 URL、WireGuard 地址和节点 Token。</p>
+                  <p>推荐在目标主机运行 <code>sudo file-panel setup-agent</code>，拿到 WireGuard IP 和 Agent Token 后再回填节点表单。</p>
+                </article>
+
+                <article class="guide-card">
+                  <h3>引导与更新</h3>
+                  <p>WireGuard 引导支持一次性命令生成，也支持手动登记节点。</p>
+                  <p>更新面板支持 <code>quick</code>、<code>redeploy</code> 和 <code>full-install</code> 三种模式。</p>
+                </article>
+
+                <article class="guide-card">
+                  <h3>日志与排查</h3>
+                  <p>日志页展示当前节点的 systemd 日志，可按级别过滤后查看运行问题。</p>
+                  <p>资源页区分当前值、平滑值和趋势图，适合排查瞬时负载与长期趋势。</p>
                 </article>
 
                 <article class="guide-card">
                   <h3>开发结构</h3>
                   <p><code>app/</code> 保存 FastAPI 路由、服务和存储逻辑。</p>
-                  <p><code>static/</code> 保存面板前端、样式和交互脚本。</p>
-                  <p><code>scripts/</code> 保存安装、控制和辅助脚本。</p>
-                </article>
-
-                <article class="guide-card">
-                  <h3>资源采集</h3>
-                  <p>资源概览区分当前值与 1m/5m 平滑值，并将历史样本持久化到 SQLite。</p>
-                  <p>当前值适合看瞬时状态，1m/5m 更适合看趋势，避免误把尖峰当成长期负载。</p>
-                </article>
-
-                <article class="guide-card">
-                  <h3>文件工作区</h3>
-                  <p>文件操作严格限制在 AGENT_ROOT 内部，上传、下载、删除、重命名都走后端真实文件系统操作。</p>
-                  <p>如果服务账号没有系统权限，需要通过运行配置或受控授权方式修正，而不是绕过系统权限边界。</p>
-                </article>
-
-                <article class="guide-card">
-                  <h3>节点目录</h3>
-                  <p>当前节点目录主要用于登记远程节点基础信息，包括 URL、WireGuard 地址和节点 Token。</p>
-                  <p>真正的多节点代理与统一调度仍需后续补充 manager / proxy 层。</p>
+                  <p><code>static/</code> 保存前端页面、样式和交互脚本，<code>scripts/</code> 保存安装与控制脚本。</p>
                 </article>
 
                 <article class="guide-card">
                   <h3>文档入口</h3>
                   <p>仓库内还提供 README、USAGE、DEVELOPMENT、API、CONCEPTS、ARCHITECTURE 等文档文件。</p>
-                  <p>前端文档页更适合快速查阅运行概念，仓库文档更适合后续开发和接口调用。</p>
+                  <p>前端文档页适合快速查阅界面说明，仓库文档更适合开发和接口调用。</p>
                 </article>
               </div>
             </article>

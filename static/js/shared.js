@@ -71,7 +71,6 @@ function ensureFileBrowserControls() {
       <span>系统路径</span>
       <select id="system-root-select"></select>
     </label>
-    <p id="file-mode-note" class="muted file-mode-note"></p>
   `;
   fileHeader.after(controls);
 }
@@ -90,14 +89,11 @@ function ensureWireguardBootstrapPanel() {
       <div>
         <p class="section-kicker">Bootstrap</p>
         <h2>WireGuard 接入指引</h2>
-        <p class="muted">推荐做法：在目标主机运行 <code>sudo file-panel setup-agent</code>，按问答向导完成后，再回到上面的节点表单填写 WireGuard IP 和 Agent Token。</p>
       </div>
     </div>
     <div class="wireguard-bootstrap-status-grid">
       <span id="wireguard-bootstrap-summary" class="ghost-chip">正在读取 manager WireGuard 状态...</span>
-      <p id="wireguard-bootstrap-status" class="muted">
-        先确认 manager 上的 wg0 已经配置并启动。下方是高级自动接入模式；如果你只想手动添加节点，可以直接在目标主机运行 setup-agent。
-      </p>
+      <p id="wireguard-bootstrap-status" class="muted">等待 WireGuard 状态...</p>
     </div>
     <form id="wireguard-bootstrap-form" class="settings-form">
       <label class="field">
@@ -165,9 +161,7 @@ function ensureNodeUpdatePanel() {
       <div>
         <p class="section-kicker">Updates</p>
         <h2>Auto Update</h2>
-        <p id="node-update-summary" class="muted">
-          Select a node to check the current version, latest available version, and update status.
-        </p>
+        <p id="node-update-summary" class="muted">等待读取更新状态。</p>
       </div>
       <div class="section-actions">
         <button id="refresh-node-update-status" type="button" class="secondary">Refresh Status</button>

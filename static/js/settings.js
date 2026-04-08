@@ -79,7 +79,7 @@ export function renderWireguardBootstrapStatus(payload) {
   if (!available) {
     dom.wireguardBootstrapSummaryEl.textContent = "Manager wg0 未就绪";
     dom.wireguardBootstrapStatusEl.textContent =
-      payload?.message || "请先在 manager 上配置并启动 wg0。准备完成后，可以在目标主机运行 sudo file-panel setup-agent。";
+      payload?.message || "请先配置并启动 wg0。";
     return;
   }
 
@@ -95,8 +95,7 @@ export function renderWireguardBootstrapStatus(payload) {
   }
 
   dom.wireguardBootstrapSummaryEl.textContent = `Manager wg0 已就绪 · ${summaryParts.join(" · ")}`;
-  dom.wireguardBootstrapStatusEl.textContent =
-    "推荐：先在目标主机运行 sudo file-panel setup-agent，通过问答向导完成内网配置，再回到当前页面手动填写 WireGuard IP 和 Agent Token。";
+  dom.wireguardBootstrapStatusEl.textContent = "可以生成引导命令。";
 }
 
 export async function loadWireguardBootstrapStatus() {
@@ -509,8 +508,7 @@ export async function generateWireguardBootstrap(event) {
     dom.copyWireguardBootstrapButton.disabled = false;
     dom.wireguardBootstrapSummaryEl.textContent =
       `一次性引导命令已生成 · ${formatBootstrapTimestamp(payload.expires_at)} 前有效`;
-    dom.wireguardBootstrapStatusEl.textContent =
-      "这是高级自动接入模式。若你希望手动登记节点，也可以改为在目标主机运行 sudo file-panel setup-agent，拿到 WireGuard IP 和 Agent Token 后回到上面的节点表单填写。";
+    dom.wireguardBootstrapStatusEl.textContent = "可复制到目标主机执行。";
 
     showStatus("WireGuard 引导命令已生成", "success", { autoClearMs: 5000 });
   } catch (error) {

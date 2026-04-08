@@ -87,8 +87,8 @@ function renderLoginMode() {
   const isRegistration = state.registrationRequired;
   dom.loginTitleEl.textContent = isRegistration ? "注册管理员账号" : "登录管理平台";
   dom.loginSubtitleEl.textContent = isRegistration
-    ? "首次使用需要创建一个本地管理员账号；浏览器登录使用账号密码，不再直接暴露节点令牌。"
-    : "请输入管理员账号密码登录；会话通过 HttpOnly Cookie 保存，关闭会话后需要重新登录。";
+    ? "首次使用请创建管理员账号。"
+    : "请输入管理员账号和密码。";
   dom.loginConfirmFieldEl.classList.toggle("hidden", !isRegistration);
   dom.loginSubmitLabelEl.textContent = isRegistration ? "创建账号" : "登录";
   dom.loginPasswordInput.autocomplete = isRegistration ? "new-password" : "current-password";
