@@ -87,7 +87,7 @@ install_system_packages() {
 
 copy_project_files() {
   install -d -m 755 "$APP_DIR"
-  rm -rf "$APP_DIR/app" "$APP_DIR/static" "$APP_DIR/scripts"
+  rm -rf "$APP_DIR/app" "$APP_DIR/static" "$APP_DIR/scripts" "$APP_DIR/systemd"
   rm -f \
     "$APP_DIR/README.md" \
     "$APP_DIR/ARCHITECTURE.md" \
@@ -99,6 +99,7 @@ copy_project_files() {
   cp -a "$PROJECT_DIR/app" "$APP_DIR/"
   cp -a "$PROJECT_DIR/static" "$APP_DIR/"
   cp -a "$PROJECT_DIR/scripts" "$APP_DIR/"
+  cp -a "$PROJECT_DIR/systemd" "$APP_DIR/"
 
   for doc_name in README.md ARCHITECTURE.md WIREGUARD.md VERSION requirements.txt .env.example; do
     if [[ -f "$PROJECT_DIR/$doc_name" ]]; then
