@@ -1,7 +1,6 @@
 import {
   dom,
   escapeHtml,
-  metricCard,
   normalizeFeatureError,
   request,
   setAccessPlaceholder,
@@ -20,6 +19,87 @@ const RESTART_RECOVERY_INTERVAL_MS = 1200;
 const RESTART_RECOVERY_MAX_ATTEMPTS = 20;
 const RESOURCE_SAMPLE_INTERVAL_OPTIONS = [5, 10, 15];
 let restartResolutionRunId = 0;
+
+function setText(node, value) {
+  if (!node) {
+    return;
+  }
+  const nextValue = String(value ?? "");
+  if (node.textContent !== nextValue) {
+    node.textContent = nextValue;
+  }
+}
+
+function setInnerHTML(node, value) {
+  if (!node) {
+    return;
+  }
+  const nextValue = String(value ?? "");
+  if (node.innerHTML !== nextValue) {
+    node.innerHTML = nextValue;
+  }
+}
+
+function setValue(node, value, { skipWhileFocused = false } = {}) {
+  if (!node) {
+    return;
+  }
+  if (skipWhileFocused && document.activeElement === node) {
+    return;
+  }
+  const nextValue = String(value ?? "");
+  if (node.value !== nextValue) {
+    node.value = nextValue;
+  }
+}
+
+function setChecked(node, checked, { skipWhileFocused = false } = {}) {
+  if (!node) {
+    return;
+  }
+  if (skipWhileFocused && document.activeElement === node) {
+    return;
+  }
+  const nextValue = Boolean(checked);
+  if (node.checked !== nextValue) {
+    node.checked = nextValue;
+  }
+}
+
+function renderTextMetricCardMarkup(card, attrName) {
+  return `
+    <div class="metric-card ${escapeHtml(card.tone)} is-text ${escapeHtml(card.cardClass || "")}" ${attrName}="${escapeHtml(card.key)}">
+      <div class="metric-body">
+        <div class="metric-copy">
+          <span>${escapeHtml(card.label)}</span>
+          <strong data-role="value">${escapeHtml(card.value)}</strong>
+          <small data-role="note">${escapeHtml(card.note)}</small>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function ensureTextMetricScaffold(container, cards, attrName) {
+  if (container.querySelectorAll(`[${attrName}]`).length === cards.length) {
+    return;
+  }
+  container.className = "metric-grid";
+  container.innerHTML = cards.map((card) => renderTextMetricCardMarkup(card, attrName)).join("");
+}
+
+function patchTextMetricCards(container, cards, attrName) {
+  ensureTextMetricScaffold(container, cards, attrName);
+  container.className = "metric-grid";
+  cards.forEach((card) => {
+    const cardEl = container.querySelector(`[${attrName}="${card.key}"]`);
+    if (!cardEl) {
+      return;
+    }
+    setText(cardEl.querySelector('[data-role="value"]'), card.value);
+    setText(cardEl.querySelector('[data-role="note"]'), card.note);
+  });
+}
 
 function defaultBootstrapManagerUrl() {
   const origin = window.location.origin;
@@ -199,37 +279,44 @@ export function renderAccess(payload) {
       : "可用但未运行"
     : "未安装";
 
-  dom.accessCardsEl.className = "metric-grid";
-  dom.accessCardsEl.innerHTML = [
-    metricCard({
-      label: "当前监听",
-      value: `${payload.current_bind_host}:${payload.current_bind_port}`,
-      note: payload.restart_pending ? "重启后会切换到新的监听地址" : "当前生效",
-      tone: "tone-accent",
-    }),
-    metricCard({
-      label: "目标监听",
-      value: `${payload.desired_bind_host}:${payload.desired_bind_port}`,
-      note: payload.public_ip_access_enabled ? "仍允许通过 IP:端口 访问" : "域名完成后仅保留本地监听",
-      tone: "tone-green",
-    }),
-    metricCard({
-      label: "对外入口",
-      value: publicEntry,
-      note: payload.token_configured ? "节点令牌已配置" : "尚未配置节点令牌",
-      tone: "tone-amber",
-    }),
-    metricCard({
-      label: "Nginx / Certbot",
-      value: nginxStatus,
-      note: payload.https_enabled
-        ? "HTTPS 已就绪"
-        : payload.certbot_available
-          ? "可用于申请和续期证书"
-          : "未安装 certbot",
-      tone: "tone-olive",
-    }),
-  ].join("");
+  patchTextMetricCards(
+    dom.accessCardsEl,
+    [
+      {
+        key: "current-bind",
+        label: "当前监听",
+        value: `${payload.current_bind_host}:${payload.current_bind_port}`,
+        note: payload.restart_pending ? "重启后会切换到新的监听地址" : "当前生效",
+        tone: "tone-accent",
+      },
+      {
+        key: "desired-bind",
+        label: "目标监听",
+        value: `${payload.desired_bind_host}:${payload.desired_bind_port}`,
+        note: payload.public_ip_access_enabled ? "仍允许通过 IP:端口 访问" : "域名完成后仅保留本地监听",
+        tone: "tone-green",
+      },
+      {
+        key: "public-entry",
+        label: "对外入口",
+        value: publicEntry,
+        note: payload.token_configured ? "节点令牌已配置" : "尚未配置节点令牌",
+        tone: "tone-amber",
+      },
+      {
+        key: "nginx-certbot",
+        label: "Nginx / Certbot",
+        value: nginxStatus,
+        note: payload.https_enabled
+          ? "HTTPS 已就绪"
+          : payload.certbot_available
+            ? "可用于申请和续期证书"
+            : "未安装 certbot",
+        tone: "tone-olive",
+      },
+    ],
+    "data-access-card"
+  );
 }
 
 export function renderConfig(config) {
@@ -237,44 +324,53 @@ export function renderConfig(config) {
   state.configLoaded = true;
   const sampleInterval = Number(config.resource_sample_interval) || state.resourceSampleInterval || 5;
 
-  dom.configAgentNameInput.value = config.agent_name;
-  dom.configAgentRootInput.value = config.agent_root;
-  dom.configPortInput.value = String(config.port);
-  dom.configSampleIntervalInput.value = String(sampleInterval);
-  dom.configAgentTokenInput.value = "";
-  dom.configCertbotEmailInput.value = config.certbot_email || "";
-  dom.configAllowPublicInput.checked = config.allow_public_ip;
-  dom.configAllowRestartInput.checked = config.allow_self_restart;
+  setValue(dom.configAgentNameInput, config.agent_name, { skipWhileFocused: true });
+  setValue(dom.configAgentRootInput, config.agent_root, { skipWhileFocused: true });
+  setValue(dom.configPortInput, config.port, { skipWhileFocused: true });
+  setValue(dom.configSampleIntervalInput, sampleInterval, { skipWhileFocused: true });
+  if (!dom.configAgentTokenInput.value.trim() && document.activeElement !== dom.configAgentTokenInput) {
+    setValue(dom.configAgentTokenInput, "");
+  }
+  setValue(dom.configCertbotEmailInput, config.certbot_email || "", { skipWhileFocused: true });
+  setChecked(dom.configAllowPublicInput, config.allow_public_ip, { skipWhileFocused: true });
+  setChecked(dom.configAllowRestartInput, config.allow_self_restart, { skipWhileFocused: true });
   state.resourceSampleInterval = sampleInterval;
 
   const databasePath = config.database_path || "未检测到";
-  dom.configSummaryEl.className = "metric-grid";
-  dom.configSummaryEl.innerHTML = [
-    metricCard({
-      label: "根目录",
-      value: config.agent_root,
-      note: "文件操作不会越过这个边界",
-      tone: "tone-accent",
-    }),
-    metricCard({
-      label: "目标监听",
-      value: `${config.desired_bind_host}:${config.desired_bind_port}`,
-      note: `当前运行 ${config.current_bind_host}:${config.current_bind_port}`,
-      tone: "tone-green",
-    }),
-    metricCard({
-      label: "域名状态",
-      value: config.public_domain || "尚未接入域名",
-      note: config.restart_pending ? "存在待重启生效的参数" : "SQLite 配置已同步",
-      tone: "tone-amber",
-    }),
-    metricCard({
-      label: "令牌 / 存储",
-      value: config.token_configured ? "Agent Token 已配置" : "尚未配置 Agent Token",
-      note: `采样 ${sampleInterval} 秒，数据库 ${databasePath}`,
-      tone: "tone-olive",
-    }),
-  ].join("");
+  patchTextMetricCards(
+    dom.configSummaryEl,
+    [
+      {
+        key: "root",
+        label: "根目录",
+        value: config.agent_root,
+        note: "文件操作不会越过这个边界",
+        tone: "tone-accent",
+      },
+      {
+        key: "target-bind",
+        label: "目标监听",
+        value: `${config.desired_bind_host}:${config.desired_bind_port}`,
+        note: `当前运行 ${config.current_bind_host}:${config.current_bind_port}`,
+        tone: "tone-green",
+      },
+      {
+        key: "domain",
+        label: "域名状态",
+        value: config.public_domain || "尚未接入域名",
+        note: config.restart_pending ? "存在待重启生效的参数" : "SQLite 配置已同步",
+        tone: "tone-amber",
+      },
+      {
+        key: "token-storage",
+        label: "令牌 / 存储",
+        value: config.token_configured ? "Agent Token 已配置" : "尚未配置 Agent Token",
+        note: `采样 ${sampleInterval} 秒，数据库 ${databasePath}`,
+        tone: "tone-olive",
+      },
+    ],
+    "data-config-card"
+  );
 }
 
 function serverBadges(server) {
@@ -336,6 +432,56 @@ function fillServerForm(server) {
   dom.serverEnabledInput.checked = server.enabled;
 }
 
+function serverKey(server) {
+  return server.is_local ? `local:${server.name}` : `remote:${server.id}`;
+}
+
+function createServerRow(server) {
+  const row = document.createElement("div");
+  row.innerHTML = `
+    <div class="server-main">
+      <div class="server-title-row">
+        <strong data-role="name"></strong>
+        <div class="server-chip-row" data-role="badges"></div>
+      </div>
+      <small data-role="base-url"></small>
+      <small data-role="last-seen"></small>
+    </div>
+    <div class="server-actions" data-role="actions"></div>
+  `;
+  updateServerRow(row, server);
+  return row;
+}
+
+function updateServerRow(row, server) {
+  row.className = `server-row${isSelectedServer(server) ? " is-selected" : ""}`;
+  row.dataset.serverKey = serverKey(server);
+  setText(row.querySelector('[data-role="name"]'), server.name);
+  setInnerHTML(row.querySelector('[data-role="badges"]'), serverBadges(server));
+  setText(row.querySelector('[data-role="base-url"]'), server.base_url || "未配置节点 URL");
+  setText(
+    row.querySelector('[data-role="last-seen"]'),
+    server.last_seen_at
+      ? `最近连通 ${new Date(server.last_seen_at).toLocaleString("zh-CN", { hour12: false })}`
+      : "尚未成功连接过该节点"
+  );
+  setInnerHTML(row.querySelector('[data-role="actions"]'), serverActions(server));
+}
+
+function syncServerRows(servers) {
+  const existingRows = new Map(
+    Array.from(dom.serversListEl.querySelectorAll(".server-row")).map((row) => [row.dataset.serverKey, row])
+  );
+  const fragment = document.createDocumentFragment();
+  servers.forEach((server) => {
+    const key = serverKey(server);
+    const row = existingRows.get(key) || createServerRow(server);
+    updateServerRow(row, server);
+    fragment.appendChild(row);
+  });
+  dom.serversListEl.replaceChildren(fragment);
+}
+
 export function renderServers(payload) {
   state.servers = payload.items || [];
   state.serversLoaded = true;
@@ -359,29 +505,7 @@ export function renderServers(payload) {
   }
 
   dom.serversListEl.className = "server-list";
-  dom.serversListEl.innerHTML = state.servers
-    .map(
-      (server) => `
-        <div class="server-row ${isSelectedServer(server) ? "is-selected" : ""}">
-          <div class="server-main">
-            <div class="server-title-row">
-              <strong>${escapeHtml(server.name)}</strong>
-              <div class="server-chip-row">${serverBadges(server)}</div>
-            </div>
-            <small>${escapeHtml(server.base_url || "未配置节点 URL")}</small>
-            <small>${
-              server.last_seen_at
-                ? `最近连通 ${escapeHtml(new Date(server.last_seen_at).toLocaleString("zh-CN", { hour12: false }))}`
-                : "尚未成功连接过该节点"
-            }</small>
-          </div>
-          <div class="server-actions">
-            ${serverActions(server)}
-          </div>
-        </div>
-      `
-    )
-    .join("");
+  syncServerRows(state.servers);
 }
 
 export async function loadAccess() {
