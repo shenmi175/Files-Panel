@@ -11,7 +11,7 @@
   --olive: #6a7b54;
   --amber: #c57a38;
   --danger: #a74a34;
-  --shadow: 0 24px 70px rgba(52, 49, 41, 0.12);
+  --shadow: 0 14px 36px rgba(52, 49, 41, 0.1);
   --radius-xl: 28px;
   --radius-lg: 22px;
   --radius-md: 18px;
@@ -213,7 +213,6 @@ span {
   border: 1px solid var(--line);
   border-radius: var(--radius-xl);
   box-shadow: var(--shadow);
-  backdrop-filter: blur(14px);
 }
 
 .hero {
@@ -327,6 +326,37 @@ h3 {
   background: rgba(255, 255, 255, 0.78);
   border-radius: var(--radius-md);
   border: 1px solid var(--line);
+}
+
+.summary-card,
+.metric-card,
+.resource-section,
+.detail-card,
+.chart-panel,
+.file-row,
+.log-line,
+.server-row {
+  content-visibility: auto;
+}
+
+.summary-card,
+.metric-card {
+  contain-intrinsic-size: 156px;
+}
+
+.resource-section,
+.detail-card,
+.chart-panel {
+  contain-intrinsic-size: 280px;
+}
+
+.file-row {
+  contain-intrinsic-size: 92px;
+}
+
+.log-line,
+.server-row {
+  contain-intrinsic-size: 108px;
 }
 
 .summary-card {

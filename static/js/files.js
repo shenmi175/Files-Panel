@@ -145,16 +145,6 @@ function renderBreadcrumbs(currentPath, rootPath) {
       `
     )
     .join('<span class="crumb-sep">/</span>');
-
-  dom.pathBreadcrumbsEl.querySelectorAll(".crumb").forEach((button) => {
-    button.addEventListener("click", async () => {
-      if (button.classList.contains("is-current")) {
-        return;
-      }
-      state.selectedEntry = null;
-      await navigateToPath(button.dataset.path);
-    });
-  });
 }
 
 function renderFileRow(entry) {
@@ -188,6 +178,61 @@ function renderFileRow(entry) {
   `;
 }
 
+function setSelectedRow(nextRow = null) {
+  const currentSelectedRow = dom.filesEl.querySelector(".file-row.selected");
+  if (currentSelectedRow && currentSelectedRow !== nextRow) {
+    currentSelectedRow.classList.remove("selected");
+  }
+  if (nextRow) {
+    nextRow.classList.add("selected");
+  }
+}
+
+function handleBreadcrumbClick(event) {
+  if (!(event.target instanceof Element)) {
+    return;
+  }
+  const button = event.target.closest(".crumb");
+  if (!button || !dom.pathBreadcrumbsEl.contains(button) || button.classList.contains("is-current")) {
+    return;
+  }
+  state.selectedEntry = null;
+  void navigateToPath(button.dataset.path).catch((error) => showStatus(error.message, "error"));
+}
+
+function handleFilesClick(event) {
+  if (!(event.target instanceof Element)) {
+    return;
+  }
+  const row = event.target.closest(".file-row");
+  if (!row || !dom.filesEl.contains(row)) {
+    return;
+  }
+  state.selectedEntry = {
+    path: row.dataset.path,
+    type: row.dataset.type,
+    name: row.dataset.name,
+  };
+  setSelectedRow(row);
+}
+
+function handleFilesDoubleClick(event) {
+  if (!(event.target instanceof Element)) {
+    return;
+  }
+  const row = event.target.closest(".file-row");
+  if (!row || !dom.filesEl.contains(row) || row.dataset.type !== "directory") {
+    return;
+  }
+  state.selectedEntry = null;
+  setSelectedRow(null);
+  void navigateToPath(row.dataset.path).catch((error) => showStatus(error.message, "error"));
+}
+
+dom.pathBreadcrumbsEl.addEventListener("click", handleBreadcrumbClick);
+dom.filesEl.addEventListener("click", handleFilesClick);
+dom.filesEl.addEventListener("dblclick", handleFilesDoubleClick);
+
 export function renderFiles(payload) {
   state.fileBrowseMode = payload.browse_mode === "system" ? "system" : "workspace";
   state.fileReadOnly = Boolean(payload.read_only);
@@ -216,30 +261,6 @@ export function renderFiles(payload) {
 
   dom.filesEl.className = "file-list";
   dom.filesEl.innerHTML = payload.entries.map(renderFileRow).join("");
-
-  const highlightSelection = () => {
-    dom.filesEl.querySelectorAll(".file-row").forEach((row) => {
-      row.classList.toggle("selected", row.dataset.path === state.selectedEntry?.path);
-    });
-  };
-
-  dom.filesEl.querySelectorAll(".file-row").forEach((row) => {
-    row.addEventListener("click", () => {
-      state.selectedEntry = {
-        path: row.dataset.path,
-        type: row.dataset.type,
-        name: row.dataset.name,
-      };
-      highlightSelection();
-    });
-
-    row.addEventListener("dblclick", async () => {
-      if (row.dataset.type === "directory") {
-        state.selectedEntry = null;
-        await navigateToPath(row.dataset.path);
-      }
-    });
-  });
 }
 
 export async function loadFiles() {

@@ -43,7 +43,9 @@ import {
 } from "./settings.js";
 
 const AUTH_REQUIRED_MESSAGE = "请先登录后再访问面板内容。";
+const BACKGROUND_PRELOAD_DELAY_MS = 1200;
 let autoRefreshHandle = 0;
+let backgroundPreloadHandle = 0;
 
 function canAccessProtectedViews() {
   return !state.authEnabled || state.isAuthenticated;
@@ -102,7 +104,20 @@ function resetAgentSummary() {
   updateHeroAccess();
 }
 
+function clearBackgroundPreloadHandle() {
+  if (!backgroundPreloadHandle) {
+    return;
+  }
+  if ("cancelIdleCallback" in window) {
+    window.cancelIdleCallback(backgroundPreloadHandle);
+  } else {
+    window.clearTimeout(backgroundPreloadHandle);
+  }
+  backgroundPreloadHandle = 0;
+}
+
 function resetProtectedState() {
+  clearBackgroundPreloadHandle();
   state.agent = null;
   state.access = null;
   state.config = null;
@@ -130,6 +145,7 @@ function resetProtectedState() {
 }
 
 function resetSelectedNodeData() {
+  clearBackgroundPreloadHandle();
   state.agent = null;
   state.access = null;
   state.config = null;
@@ -153,6 +169,12 @@ function resetSelectedNodeData() {
   state.selectedSystemRoot = null;
   state.currentPath = null;
   state.parentPath = null;
+}
+
+function yieldToMainThread() {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, 0);
+  });
 }
 
 function showLoginView(message = "") {
@@ -271,24 +293,49 @@ function startBackgroundPreload() {
   }
 
   state.preloadStarted = true;
-  void (async () => {
+  clearBackgroundPreloadHandle();
+
+  const runPreload = async () => {
     const tasks = [];
 
     if (!(state.accessLoaded && state.configLoaded && state.serversLoaded)) {
-      tasks.push(refreshSettings({ includeConfig: true, includeServers: true }));
+      tasks.push(() => refreshSettings({ includeConfig: true, includeServers: true }));
     }
     if (!state.resourcesLoaded) {
-      tasks.push(loadResourcesSection());
+      tasks.push(() => loadResourcesSection());
     }
     if (!state.filesLoaded) {
-      tasks.push(loadFiles());
+      tasks.push(() => loadFiles());
     }
     if (!state.logsLoaded) {
-      tasks.push(loadLogsSection());
+      tasks.push(() => loadLogsSection());
     }
 
-    await Promise.allSettled(tasks.map((task) => Promise.resolve(task).catch(() => {})));
-  })();
+    for (const task of tasks) {
+      if (!state.preloadStarted || !canAccessProtectedViews()) {
+        return;
+      }
+      await Promise.resolve(task()).catch(() => {});
+      await yieldToMainThread();
+    }
+  };
+
+  const startPreload = () => {
+    backgroundPreloadHandle = 0;
+    if (!state.preloadStarted || !canAccessProtectedViews()) {
+      return;
+    }
+    void runPreload();
+  };
+
+  if ("requestIdleCallback" in window) {
+    backgroundPreloadHandle = window.requestIdleCallback(startPreload, {
+      timeout: BACKGROUND_PRELOAD_DELAY_MS,
+    });
+    return;
+  }
+
+  backgroundPreloadHandle = window.setTimeout(startPreload, BACKGROUND_PRELOAD_DELAY_MS);
 }
 
 function nextAutoRefreshDelay() {
@@ -308,6 +355,9 @@ function scheduleAutoRefresh() {
   autoRefreshHandle = window.setTimeout(async () => {
     try {
       if (!canAccessProtectedViews()) {
+        return;
+      }
+      if (document.hidden) {
         return;
       }
 
