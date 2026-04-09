@@ -4,7 +4,7 @@ import json
 import os
 import re
 import subprocess
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -69,7 +69,7 @@ def _load_status_payload() -> dict[str, object]:
 
 
 def _utc_timestamp() -> str:
-    return datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def _run_git(source_dir: Path, *args: str) -> str | None:
