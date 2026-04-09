@@ -996,15 +996,14 @@ h3 {
 .files-workspace {
   display: grid;
   gap: 18px;
-  min-height: min(78vh, 920px);
-  grid-template-rows: auto auto auto minmax(0, 1fr);
 }
 
 .files-scroll-shell {
   min-height: 0;
+  max-height: min(62vh, 760px);
   overflow: hidden;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  display: flex;
+  flex-direction: column;
   border-radius: var(--radius-lg);
   border: 1px solid var(--line);
   background:
@@ -1022,11 +1021,13 @@ h3 {
 }
 
 .file-list {
+  flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
   padding: 10px;
   display: grid;
   gap: 10px;
+  align-content: start;
 }
 
 .file-row {

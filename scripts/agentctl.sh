@@ -81,7 +81,7 @@ wireguard_ip() {
   if ! command -v ip >/dev/null 2>&1; then
     return 0
   fi
-  ip -4 -o addr show wg0 2>/dev/null | awk '{print $4}' | cut -d/ -f1
+  ip -4 -o addr show wg0 2>/dev/null | awk '{print $4}' | cut -d/ -f1 || true
 }
 
 bind_host() {
