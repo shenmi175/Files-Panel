@@ -437,7 +437,7 @@
                 <article class="guide-card">
                   <h3>节点与 WireGuard</h3>
                   <p>节点目录用于登记远程节点 URL、WireGuard 地址和节点 Token。</p>
-                  <p>推荐在目标主机运行 <code>sudo file-panel setup-agent</code>，拿到 WireGuard IP 和 Agent Token 后再回填节点表单。</p>
+                  <p><code>install_agent_only.sh</code> 只安装 agent 和 <code>wireguard-tools</code>；要拿到 WireGuard IP，还需要继续运行 <code>sudo file-panel setup-agent</code> 或 <code>sudo file-panel bootstrap-wireguard ...</code>。</p>
                 </article>
 
                 <article class="guide-card">

@@ -86,8 +86,8 @@ file-panel uninstall
 如果你要把另一台服务器接入当前 manager：
 
 1. 在目标主机部署 `agent-only`
-2. 记录该主机的 `AGENT_TOKEN`
-3. 配好 WireGuard，拿到目标主机的 `wg0` 地址
+2. 继续配置 WireGuard
+3. 记录该主机的 `AGENT_TOKEN` 和 `WireGuard IP`
 4. 在 manager 的“节点”页录入：
    - 节点名称
    - WireGuard IP
@@ -98,16 +98,14 @@ file-panel uninstall
 
 ## WireGuard
 
-项目当前只负责安装 `wireguard-tools`，不会自动创建 peer、密钥或 `wg0` 隧道。
+`install_agent_only.sh` 只安装 `agent` 和 `wireguard-tools`，不会自动创建 `wg0`。
 
-推荐用法：
+安装后继续执行下面任一流程，当前节点才会真正拥有 `WireGuard IP`：
 
-- 管理机部署 `manager`
-- 每台目标主机部署 `agent-only`
-- manager 和 agent 通过 WireGuard 私网互通
-- 节点目录优先使用 `WireGuard IP + AGENT_TOKEN`
+- 手动流程：`sudo file-panel setup-agent`
+- manager 引导式流程：`sudo file-panel bootstrap-wireguard --manager-url <manager-url> --bootstrap-token <token>`
 
-具体示例见 [WIREGUARD.md](WIREGUARD.md)。
+最短步骤和字段填写示例见 [WIREGUARD.md](WIREGUARD.md)。
 
 ## 开发启动
 

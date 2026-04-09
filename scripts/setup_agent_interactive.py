@@ -152,9 +152,19 @@ def prompt_yes_no(label: str, *, default: bool = False) -> bool:
 
 
 def validate_host(value: str) -> str:
-    if not value:
+    normalized = value.strip()
+    if not normalized:
         raise ValueError("不能为空")
-    return value
+    if "://" in normalized:
+        raise ValueError("这里只填域名或 IP，不要带 http:// 或 https://")
+    if "/" in normalized:
+        raise ValueError("这里只填域名或 IP，不要带路径")
+
+    host_part, separator, port_part = normalized.rpartition(":")
+    if separator and host_part and port_part.isdigit() and normalized.count(":") == 1:
+        raise ValueError("端口单独填写，不要写成 host:port")
+
+    return normalized
 
 
 def validate_port(value: str) -> str:
@@ -280,7 +290,10 @@ def main() -> int:
             print("已取消。")
             return 1
 
-    endpoint_host = prompt_text("manager 的 WireGuard 公网地址或域名", validator=validate_host)
+    endpoint_host = prompt_text(
+        "manager 的 WireGuard 公网地址或域名（不要带 http/https，也不要带端口）",
+        validator=validate_host,
+    )
     endpoint_port = prompt_text(
         "manager 的 WireGuard 监听端口",
         default=str(DEFAULT_WIREGUARD_PORT),
@@ -291,11 +304,11 @@ def main() -> int:
         validator=validate_public_key,
     )
     address_cidr = prompt_text(
-        "分配给这台主机的 WireGuard 内网地址",
+        "分配给这台主机的 WireGuard 地址（例如 10.66.0.3/24）",
         validator=validate_address_cidr,
     )
     allowed_ips = prompt_text(
-        "AllowedIPs",
+        "AllowedIPs（通常填 WireGuard 网段，例如 10.66.0.0/24）",
         default=infer_allowed_ips(address_cidr),
         validator=validate_allowed_ips,
     )

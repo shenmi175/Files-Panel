@@ -22,6 +22,7 @@ On the manager host:
 - install the manager role
 - configure and start `wg0`
 - make sure the manager WireGuard endpoint is reachable from the target host
+- run `sudo wg show wg0 public-key` and keep that value ready for the target host wizard
 
 Manager `wg0` example:
 
@@ -61,6 +62,11 @@ The wizard asks for:
 - `AllowedIPs`
 - optional DNS
 
+Important:
+
+- the manager WireGuard public key must be obtained on the manager host with `sudo wg show wg0 public-key`
+- if that command fails with `Unable to access interface: No such device`, the manager `wg0` interface is not ready yet
+
 After confirmation, it will:
 
 - generate the local WireGuard keypair
@@ -69,6 +75,23 @@ After confirmation, it will:
 - print the local WireGuard public key
 - print the final `WireGuard IP`
 - print the final `AGENT_TOKEN`
+
+At this point the target host config exists, but you still need to add the target host as a peer on the manager.
+
+On the manager host, append a `[Peer]` block into `/etc/wireguard/wg0.conf`:
+
+```ini
+[Peer]
+PublicKey = <target-host-public-key>
+AllowedIPs = <target-host-wireguard-ip>/32
+```
+
+Then reload the manager interface:
+
+```bash
+sudo systemctl restart wg-quick@wg0
+sudo wg show
+```
 
 ## 4. Add the Node in the Manager UI
 

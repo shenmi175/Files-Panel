@@ -183,7 +183,11 @@ def main() -> int:
 
     config_path = existing_wireguard_config_path()
     if config_path.exists():
-        raise RuntimeError(f"{config_path} already exists; remove or back it up before bootstrapping again")
+        raise RuntimeError(
+            f"{config_path} already exists; bootstrap mode only works on a clean target host. "
+            "A previous setup-agent attempt may have left this file behind. "
+            "Back it up or remove it before bootstrapping again"
+        )
 
     agent_name = (args.node_name or "").strip() or config_value(env_values, "AGENT_NAME", default=os.uname().nodename)
     agent_token = config_value(env_values, "AGENT_TOKEN")

@@ -94,6 +94,7 @@ function ensureWireguardBootstrapPanel() {
     <div class="wireguard-bootstrap-status-grid">
       <span id="wireguard-bootstrap-summary" class="ghost-chip">正在读取 manager WireGuard 状态...</span>
       <p id="wireguard-bootstrap-status" class="muted">等待 WireGuard 状态...</p>
+      <p class="muted">引导模式适用于尚未配置 <code>wg0</code> 的新节点；如果目标机已存在 <code>/etc/wireguard/wg0.conf</code>，请先备份或删除。</p>
     </div>
     <form id="wireguard-bootstrap-form" class="settings-form">
       <label class="field">
