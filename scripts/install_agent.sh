@@ -87,11 +87,18 @@ install_system_packages() {
 
 copy_project_files() {
   install -d -m 755 "$APP_DIR"
-  rm -rf "$APP_DIR/app" "$APP_DIR/static" "$APP_DIR/scripts" "$APP_DIR/systemd"
+  rm -rf "$APP_DIR/app" "$APP_DIR/static" "$APP_DIR/scripts" "$APP_DIR/systemd" "$APP_DIR/wiki"
+  # Remove legacy root-level docs from older installs before copying README + wiki/.
   rm -f \
     "$APP_DIR/README.md" \
     "$APP_DIR/ARCHITECTURE.md" \
+    "$APP_DIR/API.md" \
+    "$APP_DIR/CONCEPTS.md" \
+    "$APP_DIR/DEVELOPMENT.md" \
+    "$APP_DIR/USAGE.md" \
     "$APP_DIR/WIREGUARD.md" \
+    "$APP_DIR/WIREGUARD_BOOTSTRAP.md" \
+    "$APP_DIR/AGENT_ONBOARDING.md" \
     "$APP_DIR/VERSION" \
     "$APP_DIR/requirements.txt" \
     "$APP_DIR/.env.example"
@@ -100,8 +107,11 @@ copy_project_files() {
   cp -a "$PROJECT_DIR/static" "$APP_DIR/"
   cp -a "$PROJECT_DIR/scripts" "$APP_DIR/"
   cp -a "$PROJECT_DIR/systemd" "$APP_DIR/"
+  if [[ -d "$PROJECT_DIR/wiki" ]]; then
+    cp -a "$PROJECT_DIR/wiki" "$APP_DIR/"
+  fi
 
-  for doc_name in README.md ARCHITECTURE.md WIREGUARD.md VERSION requirements.txt .env.example; do
+  for doc_name in README.md VERSION requirements.txt .env.example; do
     if [[ -f "$PROJECT_DIR/$doc_name" ]]; then
       cp -a "$PROJECT_DIR/$doc_name" "$APP_DIR/"
     fi
