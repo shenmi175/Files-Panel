@@ -165,12 +165,14 @@ class ResourceHistoryPoint(BaseModel):
     memory_used_percent: float
     disk_used_percent: float
     load_ratio_percent: float
+    network_download_bps: int = 0
+    network_upload_bps: int = 0
 
 
 class ResourceMetricRollup(BaseModel):
-    current: float | None
-    average_1m: float | None
-    average_5m: float | None
+    current: float | None = None
+    average_1m: float | None = None
+    average_5m: float | None = None
 
 
 class ResourceHistorySummary(BaseModel):
@@ -178,6 +180,8 @@ class ResourceHistorySummary(BaseModel):
     memory_used_percent: ResourceMetricRollup
     disk_used_percent: ResourceMetricRollup
     load_ratio_percent: ResourceMetricRollup
+    network_download_bps: ResourceMetricRollup = Field(default_factory=ResourceMetricRollup)
+    network_upload_bps: ResourceMetricRollup = Field(default_factory=ResourceMetricRollup)
 
 
 class ResourceHistoryResponse(BaseModel):

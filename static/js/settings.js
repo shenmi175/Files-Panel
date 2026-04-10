@@ -21,6 +21,10 @@ const RESOURCE_SAMPLE_INTERVAL_OPTIONS = [5, 10, 15];
 const UPDATE_CHANNEL_OPTIONS = ["stable", "rc", "main"];
 let restartResolutionRunId = 0;
 
+function isRemoteNodeContext() {
+  return Number.isInteger(state.selectedServerId);
+}
+
 function setText(node, value) {
   if (!node) {
     return;
@@ -516,8 +520,17 @@ export function renderAccess(payload) {
   state.access = payload;
   state.accessLoaded = true;
   updateHeroAccess();
+  const remoteNodeContext = isRemoteNodeContext();
 
-  if (payload.public_url) {
+  if (dom.domainForm) {
+    dom.domainForm.classList.toggle("hidden", remoteNodeContext);
+  }
+
+  if (remoteNodeContext) {
+    dom.accessSummaryEl.textContent = payload.public_url
+      ? `以下展示远程节点的本地入口状态；该节点当前独立入口为 ${payload.public_url}。`
+      : "以下展示远程节点的本地入口状态；域名接入操作仅在当前管理机视图提供。";
+  } else if (payload.public_url) {
     dom.accessSummaryEl.textContent = payload.restart_pending
       ? `域名已接入：${payload.public_url}，等待服务重启切换到本地监听。`
       : `域名已接入：${payload.public_url}`;
@@ -543,34 +556,52 @@ export function renderAccess(payload) {
     [
       {
         key: "current-bind",
-        label: "当前监听",
+        label: remoteNodeContext ? "节点当前监听" : "当前监听",
         value: `${payload.current_bind_host}:${payload.current_bind_port}`,
-        note: payload.restart_pending ? "重启后会切换到新的监听地址" : "当前生效",
+        note: payload.restart_pending
+          ? "重启后会切换到新的监听地址"
+          : remoteNodeContext
+            ? "远程节点当前生效"
+            : "当前生效",
         tone: "tone-accent",
       },
       {
         key: "desired-bind",
-        label: "目标监听",
+        label: remoteNodeContext ? "节点目标监听" : "目标监听",
         value: `${payload.desired_bind_host}:${payload.desired_bind_port}`,
-        note: payload.public_ip_access_enabled ? "仍允许通过 IP:端口 访问" : "域名完成后仅保留本地监听",
+        note: payload.public_ip_access_enabled
+          ? "仍允许通过 IP:端口 访问"
+          : remoteNodeContext
+            ? "仅反映远程节点的本地监听策略"
+            : "域名完成后仅保留本地监听",
         tone: "tone-green",
       },
       {
         key: "public-entry",
-        label: "对外入口",
+        label: remoteNodeContext ? "节点入口" : "对外入口",
         value: publicEntry,
-        note: payload.token_configured ? "节点令牌已配置" : "尚未配置节点令牌",
+        note: remoteNodeContext
+          ? "这是远程节点自己的入口，不是 manager 统一入口"
+          : payload.token_configured
+            ? "节点令牌已配置"
+            : "尚未配置节点令牌",
         tone: "tone-amber",
       },
       {
         key: "nginx-certbot",
         label: "Nginx / Certbot",
         value: nginxStatus,
-        note: payload.https_enabled
-          ? "HTTPS 已就绪"
-          : payload.certbot_available
-            ? "可用于申请和续期证书"
-            : "未安装 certbot",
+        note: remoteNodeContext
+          ? payload.https_enabled
+            ? "远程节点本地 HTTPS 已就绪"
+            : payload.certbot_available
+              ? "远程节点本地可申请和续期证书"
+              : "远程节点未安装 certbot"
+          : payload.https_enabled
+            ? "HTTPS 已就绪"
+            : payload.certbot_available
+              ? "可用于申请和续期证书"
+              : "未安装 certbot",
         tone: "tone-olive",
       },
     ],
@@ -581,6 +612,7 @@ export function renderAccess(payload) {
 export function renderConfig(config) {
   state.config = config;
   state.configLoaded = true;
+  const remoteNodeContext = isRemoteNodeContext();
   const sampleInterval = Number(config.resource_sample_interval) || state.resourceSampleInterval || 5;
 
   setValue(dom.configAgentNameInput, config.agent_name, { skipWhileFocused: true });
@@ -617,9 +649,13 @@ export function renderConfig(config) {
       },
       {
         key: "domain",
-        label: "域名状态",
-        value: config.public_domain || "尚未接入域名",
-        note: config.restart_pending ? "存在待重启生效的参数" : "SQLite 配置已同步",
+        label: remoteNodeContext ? "节点入口状态" : "域名状态",
+        value: config.public_domain || (remoteNodeContext ? "未配置独立域名" : "尚未接入域名"),
+        note: remoteNodeContext
+          ? "仅展示远程节点本地入口信息"
+          : config.restart_pending
+            ? "存在待重启生效的参数"
+            : "SQLite 配置已同步",
         tone: "tone-amber",
       },
       {
@@ -946,6 +982,10 @@ export async function refreshSettings({ includeConfig = true, includeServers = t
 
 export async function configureDomain(event) {
   event.preventDefault();
+  if (isRemoteNodeContext()) {
+    showStatus("远程节点视图不提供域名接入，请切回当前管理机。", "info");
+    return;
+  }
   const domain = dom.domainInput.value.trim();
   if (!domain) {
     showStatus("请填写域名。", "error");

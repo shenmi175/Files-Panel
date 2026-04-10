@@ -88,6 +88,8 @@ def _record_to_history_point(record: dict[str, float | int | str]) -> ResourceHi
         memory_used_percent=float(record["memory_used_percent"]),
         disk_used_percent=float(record["disk_used_percent"]),
         load_ratio_percent=float(record["load_ratio_percent"]),
+        network_download_bps=int(record.get("network_download_bps") or 0),
+        network_upload_bps=int(record.get("network_upload_bps") or 0),
     )
 
 
@@ -152,6 +154,8 @@ def _build_history_summary(
             memory_used_percent=empty,
             disk_used_percent=empty,
             load_ratio_percent=empty,
+            network_download_bps=empty,
+            network_upload_bps=empty,
         )
 
     latest_at = _parse_utc_timestamp(str(records[-1]["sampled_at"]))
@@ -160,6 +164,8 @@ def _build_history_summary(
         memory_used_percent=_build_metric_rollup(records, "memory_used_percent", latest_at=latest_at),
         disk_used_percent=_build_metric_rollup(records, "disk_used_percent", latest_at=latest_at),
         load_ratio_percent=_build_metric_rollup(records, "load_ratio_percent", latest_at=latest_at),
+        network_download_bps=_build_metric_rollup(records, "network_download_bps", latest_at=latest_at),
+        network_upload_bps=_build_metric_rollup(records, "network_upload_bps", latest_at=latest_at),
     )
 
 
@@ -209,6 +215,12 @@ def _downsample_history_points(
                 load_ratio_percent=round(
                     sum(float(item["load_ratio_percent"]) for item in bucket) / count,
                     1,
+                ),
+                network_download_bps=round(
+                    sum(float(item["network_download_bps"]) for item in bucket) / count
+                ),
+                network_upload_bps=round(
+                    sum(float(item["network_upload_bps"]) for item in bucket) / count
                 ),
             )
         )

@@ -62,6 +62,10 @@ function formatRollupValue(value) {
   return value === null || value === undefined ? "-" : formatMetricPercent(Number(value));
 }
 
+function formatRateValue(value) {
+  return value === null || value === undefined ? "-" : formatRate(Number(value));
+}
+
 function parsePercent(rawValue) {
   if (rawValue === null || rawValue === undefined || rawValue === "") {
     return null;
@@ -106,6 +110,8 @@ function buildFallbackHistory(snapshot) {
   const currentMemory = Number(snapshot?.memory?.used_percent ?? 0);
   const currentDisk = Number(snapshot?.root_disk?.used_percent ?? 0);
   const currentLoad = Number(snapshot?.load_ratio_percent ?? 0);
+  const currentDownload = Number(snapshot?.network?.download_bps ?? 0);
+  const currentUpload = Number(snapshot?.network?.upload_bps ?? 0);
   const makeRollup = (value) => ({
     current: value,
     average_1m: null,
@@ -124,6 +130,8 @@ function buildFallbackHistory(snapshot) {
       memory_used_percent: makeRollup(currentMemory),
       disk_used_percent: makeRollup(currentDisk),
       load_ratio_percent: makeRollup(currentLoad),
+      network_download_bps: makeRollup(currentDownload),
+      network_upload_bps: makeRollup(currentUpload),
     },
   };
 }
@@ -206,6 +214,10 @@ function buildRollupCards(snapshot, historyPayload, summary) {
 }
 
 function buildRuntimeCards(snapshot, historyPayload, swap, inode, processes) {
+  const bandwidthRollup = historyPayload?.summary || {};
+  const topInterface = [...(snapshot.network_interfaces || [])]
+    .sort((left, right) => (right.download_bps + right.upload_bps) - (left.download_bps + left.upload_bps))[0];
+
   return [
     {
       key: "host",
@@ -233,9 +245,19 @@ function buildRuntimeCards(snapshot, historyPayload, swap, inode, processes) {
     },
     {
       key: "network",
-      label: "当前网络吞吐",
+      label: "带宽使用",
       value: `下行 ${formatRate(snapshot.network.download_bps)} / 上行 ${formatRate(snapshot.network.upload_bps)}`,
-      note: "瞬时采样值，不做平滑平均",
+      note: `1m 均值 ${formatRateValue(bandwidthRollup.network_download_bps?.average_1m)} / ${formatRateValue(bandwidthRollup.network_upload_bps?.average_1m)} · 5m 均值 ${formatRateValue(bandwidthRollup.network_download_bps?.average_5m)} / ${formatRateValue(bandwidthRollup.network_upload_bps?.average_5m)}`,
+      tone: "tone-green",
+      cardClass: "",
+    },
+    {
+      key: "network-interface",
+      label: "活跃网卡",
+      value: topInterface?.name || "无活跃网卡",
+      note: topInterface
+        ? `下行 ${formatRate(topInterface.download_bps)} / 上行 ${formatRate(topInterface.upload_bps)}`
+        : "当前没有可展示的网卡流量数据",
       tone: "tone-green",
       cardClass: "",
     },
