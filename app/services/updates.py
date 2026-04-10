@@ -33,7 +33,11 @@ from app.services.remote_nodes import remote_json_request
 UPDATE_STATUS_FILE_NAME = "update-status.json"
 UPDATE_LOG_FILE_NAME = "update.log"
 UPDATE_STATUS_RUNNING = {"scheduled", "running"}
+UPDATE_STATUS_STALE_SCHEDULE_SECONDS = 120
+UPDATE_STATUS_STALE_RUNNING_SECONDS = 900
 GIT_TIMEOUT_SECONDS = 8
+
+
 def _status_file_path() -> Path:
     return SETTINGS.state_dir / UPDATE_STATUS_FILE_NAME
 
@@ -73,6 +77,62 @@ def _load_status_payload() -> dict[str, object]:
 
 def _utc_timestamp() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _parse_utc_timestamp(raw_value: object) -> datetime | None:
+    value = str(raw_value or "").strip()
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def _process_is_running(raw_pid: object) -> bool:
+    try:
+        pid = int(raw_pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def _normalize_runtime_update_status(status_payload: dict[str, object]) -> dict[str, object]:
+    payload = dict(status_payload)
+    status = str(payload.get("status") or "idle").strip().lower() or "idle"
+    if status not in UPDATE_STATUS_RUNNING:
+        return payload
+
+    if not helper_available():
+        payload["status"] = "failed"
+        payload["message"] = "update helper is unavailable; previous update state cannot continue"
+        return payload
+
+    started_at = _parse_utc_timestamp(payload.get("started_at"))
+    age_seconds = None
+    if started_at is not None:
+        age_seconds = max(0, int((datetime.now(timezone.utc) - started_at).total_seconds()))
+
+    if status == "running":
+        if _process_is_running(payload.get("pid")):
+            return payload
+        if age_seconds is not None and age_seconds >= UPDATE_STATUS_STALE_RUNNING_SECONDS:
+            payload["status"] = "failed"
+            payload["message"] = "update status is stale; worker process is no longer running"
+            payload["finished_at"] = payload.get("finished_at") or _utc_timestamp()
+        return payload
+
+    if age_seconds is not None and age_seconds >= UPDATE_STATUS_STALE_SCHEDULE_SECONDS:
+        payload["status"] = "failed"
+        payload["message"] = "scheduled update did not start; previous state is stale"
+        payload["finished_at"] = payload.get("finished_at") or _utc_timestamp()
+    return payload
 
 
 def _run_git(source_dir: Path, *args: str) -> str | None:
@@ -170,7 +230,7 @@ def build_update_status(channel_override: str | None = None) -> UpdateStatusResp
     project_dir_valid = _is_project_dir(source_dir)
     git_available = command_available("git")
     git_repo = bool(source_dir and (source_dir / ".git").exists())
-    status_payload = _load_status_payload()
+    status_payload = _normalize_runtime_update_status(_load_status_payload())
     channel = _configured_update_channel(channel_override)
     channel_ref = _remote_version_ref(channel)
     current_version = read_project_version()
@@ -182,8 +242,6 @@ def build_update_status(channel_override: str | None = None) -> UpdateStatusResp
         git_repo=git_repo,
     )
     status = str(status_payload.get("status") or "idle").strip().lower() or "idle"
-    if status in UPDATE_STATUS_RUNNING and not helper_available():
-        status = "failed"
 
     update_available = False
     if channel_exists and current_version and latest_version:

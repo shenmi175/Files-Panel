@@ -112,10 +112,11 @@ write_update_status_json() {
   local finished_at_value="${5:-}"
   local message_value="${6:-}"
   local log_path_value="${7:-}"
+  local pid_value="${8:-}"
   local status_path
   status_path="$(update_status_path)"
   install -d -m 750 "$(dirname "$status_path")"
-  python3 - "$status_path" "$status_value" "$mode_value" "$pull_latest_value" "$started_at_value" "$finished_at_value" "$message_value" "$log_path_value" <<'PY'
+  python3 - "$status_path" "$status_value" "$mode_value" "$pull_latest_value" "$started_at_value" "$finished_at_value" "$message_value" "$log_path_value" "$pid_value" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -129,6 +130,7 @@ payload = {
     "finished_at": sys.argv[6] or None,
     "message": sys.argv[7] or None,
     "log_path": sys.argv[8] or None,
+    "pid": int(sys.argv[9]) if sys.argv[9] else None,
 }
 status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 PY
@@ -200,7 +202,8 @@ channel=$(printf '%q' "$channel")
 global_command=$(printf '%q' "$GLOBAL_COMMAND_PATH")
 helper_script=$(printf '%q' "$0")
 started_at=\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")
-python3 - \"\$status_path\" running \"\$mode\" \"\$pull_latest\" \"\$started_at\" \"\" \"update running\" \"\$log_path\" <<'PY'
+worker_pid=\$\$
+python3 - \"\$status_path\" running \"\$mode\" \"\$pull_latest\" \"\$started_at\" \"\" \"update running\" \"\$log_path\" \"\$worker_pid\" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -214,6 +217,7 @@ payload = {
     'finished_at': sys.argv[6] or None,
     'message': sys.argv[7] or None,
     'log_path': sys.argv[8] or None,
+    'pid': int(sys.argv[9]) if sys.argv[9] else None,
 }
 status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
 PY
@@ -247,7 +251,7 @@ PY
 exit_code=\$?
 finished_at=\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")
 if [[ \$exit_code -eq 0 ]]; then
-  python3 - \"\$status_path\" succeeded \"\$mode\" \"\$pull_latest\" \"\$started_at\" \"\$finished_at\" \"update completed\" \"\$log_path\" <<'PY'
+  python3 - \"\$status_path\" succeeded \"\$mode\" \"\$pull_latest\" \"\$started_at\" \"\$finished_at\" \"update completed\" \"\$log_path\" \"\" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -261,11 +265,12 @@ payload = {
     'finished_at': sys.argv[6] or None,
     'message': sys.argv[7] or None,
     'log_path': sys.argv[8] or None,
+    'pid': int(sys.argv[9]) if sys.argv[9] else None,
 }
 status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
 PY
 else
-  python3 - \"\$status_path\" failed \"\$mode\" \"\$pull_latest\" \"\$started_at\" \"\$finished_at\" \"update failed; inspect update.log\" \"\$log_path\" <<'PY'
+  python3 - \"\$status_path\" failed \"\$mode\" \"\$pull_latest\" \"\$started_at\" \"\$finished_at\" \"update failed; inspect update.log\" \"\$log_path\" \"\" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -279,6 +284,7 @@ payload = {
     'finished_at': sys.argv[6] or None,
     'message': sys.argv[7] or None,
     'log_path': sys.argv[8] or None,
+    'pid': int(sys.argv[9]) if sys.argv[9] else None,
 }
 status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
 PY

@@ -183,7 +183,7 @@ function ensureNodeUpdatePanel() {
         <strong id="node-update-latest-version">-</strong>
       </div>
       <div class="update-version-card">
-        <span>更新状态</span>
+        <span>检测结果</span>
         <strong id="node-update-availability">检查中</strong>
       </div>
     </div>

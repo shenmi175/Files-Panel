@@ -237,6 +237,18 @@ function translateUpdateMessage(message) {
       "源码目录存在未提交改动，已拒绝自动切换发布通道。",
     ],
     [
+      "update helper is unavailable; previous update state cannot continue",
+      "更新提权能力不可用，之前的更新状态无法继续。",
+    ],
+    [
+      "update status is stale; worker process is no longer running",
+      "更新状态已过期；后台更新进程已经不存在。",
+    ],
+    [
+      "scheduled update did not start; previous state is stale",
+      "已排队的更新任务并未真正启动；当前状态已过期。",
+    ],
+    [
       "an update is already running on this node",
       "当前节点已有更新任务在运行。",
     ],
