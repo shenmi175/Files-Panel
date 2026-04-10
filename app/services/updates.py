@@ -75,6 +75,18 @@ def _load_status_payload() -> dict[str, object]:
         return {}
 
 
+def _write_status_payload(payload: dict[str, object]) -> None:
+    status_path = _status_file_path()
+    try:
+        status_path.parent.mkdir(parents=True, exist_ok=True)
+        status_path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError:
+        return
+
+
 def _utc_timestamp() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -230,7 +242,10 @@ def build_update_status(channel_override: str | None = None) -> UpdateStatusResp
     project_dir_valid = _is_project_dir(source_dir)
     git_available = command_available("git")
     git_repo = bool(source_dir and (source_dir / ".git").exists())
-    status_payload = _normalize_runtime_update_status(_load_status_payload())
+    raw_status_payload = _load_status_payload()
+    status_payload = _normalize_runtime_update_status(raw_status_payload)
+    if status_payload != raw_status_payload:
+        _write_status_payload(status_payload)
     channel = _configured_update_channel(channel_override)
     channel_ref = _remote_version_ref(channel)
     current_version = read_project_version()

@@ -272,6 +272,10 @@ function translateUpdateMessage(message) {
     return `所选发布通道尚未发布到远端仓库：${missingChannelMatch[1]}`;
   }
 
+  if (/^update status is stale[;,] worker process is no longer running$/i.test(raw)) {
+    return "更新状态已过期；后台更新进程已经不存在。";
+  }
+
   return raw;
 }
 
