@@ -59,8 +59,10 @@ file-panel info
 
 ### 更新当前节点
 
+- 先在“自动更新”卡片里选择发布通道：`stable` / `rc` / `main`
 - 面板里支持 `quick` / `redeploy` / `full-install`
 - 命令行也支持对应的 `file-panel quick|redeploy|full-install`
+- 如果所选通道还没有发布到远端仓库，面板会显示“通道未发布”
 
 ## 常见排查入口
 

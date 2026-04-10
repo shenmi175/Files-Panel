@@ -131,6 +131,7 @@ function resetProtectedState() {
   state.wireguardBootstrapStatus = null;
   state.updateStatusLoaded = false;
   state.updateStatus = null;
+  state.updateChannelOverride = null;
   state.logsLoaded = false;
   state.preloadStarted = false;
   state.selectedEntry = null;
@@ -159,6 +160,7 @@ function resetSelectedNodeData() {
   state.wireguardBootstrapStatus = null;
   state.updateStatusLoaded = false;
   state.updateStatus = null;
+  state.updateChannelOverride = null;
   state.logsCursor = null;
   state.logLines = [];
   state.preloadStarted = false;
@@ -603,6 +605,12 @@ function wireEvents() {
     triggerAllNodeUpdates().catch((error) => showStatus(error.message, "error"));
   });
   dom.refreshNodeUpdateStatusButton?.addEventListener("click", () => {
+    refreshSettings({ includeConfig: false, includeServers: true }).catch((error) =>
+      showStatus(error.message, "error")
+    );
+  });
+  dom.nodeUpdateChannelInput?.addEventListener("change", () => {
+    state.updateChannelOverride = dom.nodeUpdateChannelInput.value || "main";
     refreshSettings({ includeConfig: false, includeServers: true }).catch((error) =>
       showStatus(error.message, "error")
     );

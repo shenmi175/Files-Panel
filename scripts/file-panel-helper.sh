@@ -146,12 +146,26 @@ validate_update_mode() {
   esac
 }
 
+validate_update_channel() {
+  local channel="$1"
+  case "$channel" in
+    stable|rc|main)
+      ;;
+    *)
+      echo "invalid update channel: $channel" >&2
+      exit 2
+      ;;
+  esac
+}
+
 schedule_update() {
   local mode="${1:-quick}"
   local pull_latest="${2:-1}"
+  local channel="${3:-main}"
   local source_dir role status_path log_path started_at
 
   validate_update_mode "$mode"
+  validate_update_channel "$channel"
   role="$(service_role)"
   source_dir="$(source_project_dir)"
   if ! is_project_dir "$source_dir"; then
@@ -182,6 +196,7 @@ log_path=$(printf '%q' "$log_path")
 source_dir=$(printf '%q' "$source_dir")
 mode=$(printf '%q' "$mode")
 pull_latest=$(printf '%q' "$pull_latest")
+channel=$(printf '%q' "$channel")
 global_command=$(printf '%q' "$GLOBAL_COMMAND_PATH")
 helper_script=$(printf '%q' "$0")
 started_at=\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")
@@ -203,10 +218,26 @@ payload = {
 status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
 PY
 {
-  echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] starting automatic update (\$mode)\"
+  echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] starting automatic update (\$mode, channel=\$channel)\"
   if [[ \"\$pull_latest\" == \"1\" ]]; then
-    echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] git pull --ff-only in \$source_dir\"
-    git -C \"\$source_dir\" pull --ff-only
+    echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] git fetch origin \$channel in \$source_dir\"
+    git -C \"\$source_dir\" fetch --quiet origin \"\$channel\"
+    current_branch=\$(git -C \"\$source_dir\" branch --show-current)
+    if [[ \"\$current_branch\" != \"\$channel\" ]]; then
+      if ! git -C \"\$source_dir\" diff --quiet --ignore-submodules HEAD -- || ! git -C \"\$source_dir\" diff --cached --quiet --ignore-submodules --; then
+        echo \"working tree has uncommitted changes; refusing to switch update channels automatically\"
+        exit 2
+      fi
+      if git -C \"\$source_dir\" show-ref --verify --quiet \"refs/heads/\$channel\"; then
+        echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] git checkout \$channel\"
+        git -C \"\$source_dir\" checkout \"\$channel\"
+      else
+        echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] git checkout -b \$channel --track origin/\$channel\"
+        git -C \"\$source_dir\" checkout -b \"\$channel\" --track \"origin/\$channel\"
+      fi
+    fi
+    echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] git pull --ff-only origin \$channel in \$source_dir\"
+    git -C \"\$source_dir\" pull --ff-only origin \"\$channel\"
   else
     echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] skip git pull\"
   fi

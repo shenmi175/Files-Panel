@@ -82,5 +82,8 @@ file-panel full-install
 - `quick`：只同步代码并重启
 - `redeploy`：同步代码和 Python 依赖，再重启
 - `full-install`：重新跑安装链，再重启
+- 发布通道支持 `stable` / `rc` / `main`
+- 新安装默认通道是 `main`
+- 如果要让节点切到 `stable` 或 `rc`，远端仓库必须先存在对应分支
 
 这三条命令会根据当前机器保存的 `FILE_PANEL_ROLE` 自动选择 manager 或 agent-only 安装链。

@@ -24,6 +24,7 @@ export const state = {
   selectedEntry: null,
   selectedServerId: null,
   selectedServerName: null,
+  updateChannelOverride: null,
   fileBrowseMode: "workspace",
   fileReadOnly: false,
   systemRoots: [],
@@ -174,6 +175,10 @@ function ensureNodeUpdatePanel() {
         <strong id="node-update-current-version">-</strong>
       </div>
       <div class="update-version-card">
+        <span>发布通道</span>
+        <strong id="node-update-channel-label">main</strong>
+      </div>
+      <div class="update-version-card">
         <span>最新版本</span>
         <strong id="node-update-latest-version">-</strong>
       </div>
@@ -183,7 +188,15 @@ function ensureNodeUpdatePanel() {
       </div>
     </div>
     <div id="node-update-status" class="update-status-list" aria-live="polite">正在读取更新能力。</div>
-    <form id="node-update-form" class="settings-form compact-form">
+    <form id="node-update-form" class="settings-form">
+      <label class="field">
+        <span>发布通道</span>
+        <select id="node-update-channel">
+          <option value="stable">stable</option>
+          <option value="rc">rc</option>
+          <option value="main" selected>main</option>
+        </select>
+      </label>
       <label class="field">
         <span>更新方式</span>
         <select id="node-update-mode">
@@ -192,7 +205,7 @@ function ensureNodeUpdatePanel() {
           <option value="full-install">完整安装</option>
         </select>
       </label>
-      <label class="toggle card-toggle">
+      <label class="toggle card-toggle span-2">
         <input id="node-update-pull-latest" type="checkbox" checked />
         <span>更新前先执行 <code>git pull --ff-only</code></span>
       </label>
@@ -248,6 +261,7 @@ export const dom = {
   configAgentRootInput: document.getElementById("config-agent-root"),
   configPortInput: document.getElementById("config-port"),
   configSampleIntervalInput: document.getElementById("config-sample-interval"),
+  configUpdateChannelInput: document.getElementById("config-update-channel"),
   configAgentTokenInput: document.getElementById("config-agent-token"),
   configResetTokenButton: document.getElementById("config-reset-token"),
   configCertbotEmailInput: document.getElementById("config-certbot-email"),
@@ -275,10 +289,12 @@ export const dom = {
   copyWireguardBootstrapButton: document.getElementById("copy-wireguard-bootstrap"),
   nodeUpdateSummaryEl: document.getElementById("node-update-summary"),
   nodeUpdateCurrentVersionEl: document.getElementById("node-update-current-version"),
+  nodeUpdateChannelLabelEl: document.getElementById("node-update-channel-label"),
   nodeUpdateLatestVersionEl: document.getElementById("node-update-latest-version"),
   nodeUpdateAvailabilityEl: document.getElementById("node-update-availability"),
   nodeUpdateStatusEl: document.getElementById("node-update-status"),
   nodeUpdateForm: document.getElementById("node-update-form"),
+  nodeUpdateChannelInput: document.getElementById("node-update-channel"),
   nodeUpdateModeInput: document.getElementById("node-update-mode"),
   nodeUpdatePullLatestInput: document.getElementById("node-update-pull-latest"),
   triggerNodeUpdateButton: document.getElementById("trigger-node-update"),
@@ -692,11 +708,17 @@ export function setUpdatePlaceholder(message) {
   if (dom.nodeUpdateCurrentVersionEl) {
     dom.nodeUpdateCurrentVersionEl.textContent = "-";
   }
+  if (dom.nodeUpdateChannelLabelEl) {
+    dom.nodeUpdateChannelLabelEl.textContent = "main";
+  }
   if (dom.nodeUpdateLatestVersionEl) {
     dom.nodeUpdateLatestVersionEl.textContent = "-";
   }
   if (dom.nodeUpdateAvailabilityEl) {
     dom.nodeUpdateAvailabilityEl.textContent = "不可用";
+  }
+  if (dom.nodeUpdateChannelInput) {
+    dom.nodeUpdateChannelInput.value = "main";
   }
   if (dom.nodeUpdateStatusEl) {
     dom.nodeUpdateStatusEl.textContent = message;

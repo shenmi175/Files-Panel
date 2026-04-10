@@ -6,6 +6,9 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+UpdateChannel = Literal["stable", "rc", "main"]
+
+
 class HealthResponse(BaseModel):
     status: str
     timestamp: str
@@ -273,6 +276,8 @@ class ConfigResponse(BaseModel):
     desired_bind_port: int
     restart_pending: bool
     database_path: str
+    update_channel: UpdateChannel
+    available_update_channels: list[UpdateChannel] = Field(default_factory=list)
     system_readonly_paths: list[str] = Field(default_factory=list)
 
 
@@ -285,6 +290,7 @@ class ConfigUpdateRequest(BaseModel):
     allow_public_ip: bool
     certbot_email: str | None = Field(default=None, max_length=254)
     allow_self_restart: bool
+    update_channel: UpdateChannel = "main"
 
 
 class ConfigUpdateResponse(BaseModel):
@@ -325,6 +331,10 @@ class UpdateStatusResponse(BaseModel):
     git_available: bool
     git_repo: bool
     auto_update_available: bool
+    channel: UpdateChannel
+    available_channels: list[UpdateChannel] = Field(default_factory=list)
+    channel_ref: str
+    channel_exists: bool = False
     current_version: str | None = None
     latest_version: str | None = None
     update_available: bool = False
@@ -341,6 +351,7 @@ class UpdateStatusResponse(BaseModel):
 class UpdateTriggerRequest(BaseModel):
     mode: Literal["quick", "redeploy", "full-install"] = "quick"
     pull_latest: bool = True
+    channel: UpdateChannel | None = None
 
 
 class UpdateTriggerResponse(BaseModel):

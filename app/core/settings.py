@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.storage import bootstrap_paths, initialize_storage, load_config_values
+from app.core.version import DEFAULT_UPDATE_CHANNEL, normalize_update_channel
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -31,6 +32,7 @@ class Settings:
     agent_name: str
     root_path: Path
     auth_token: str | None
+    update_channel: str
     sample_interval_seconds: int
     system_readonly_paths: tuple[str, ...]
     env_file_path: Path
@@ -83,6 +85,10 @@ def load_settings() -> Settings:
             "AGENT_NAME": os.getenv("AGENT_NAME", socket.gethostname()).strip() or socket.gethostname(),
             "AGENT_ROOT": os.getenv("AGENT_ROOT", str(DEFAULT_AGENT_ROOT)).strip() or str(DEFAULT_AGENT_ROOT),
             "AGENT_TOKEN": os.getenv("AGENT_TOKEN", "").strip(),
+            "UPDATE_CHANNEL": normalize_update_channel(
+                os.getenv("UPDATE_CHANNEL"),
+                fallback=DEFAULT_UPDATE_CHANNEL,
+            ),
             "RESOURCE_SAMPLE_INTERVAL": os.getenv("RESOURCE_SAMPLE_INTERVAL", str(DEFAULT_RESOURCE_SAMPLE_INTERVAL)).strip()
             or str(DEFAULT_RESOURCE_SAMPLE_INTERVAL),
             "SYSTEM_READONLY_PATHS": os.getenv(
@@ -124,6 +130,10 @@ def load_settings() -> Settings:
         or socket.gethostname(),
         root_path=root_path,
         auth_token=auth_token,
+        update_channel=normalize_update_channel(
+            persisted.get("UPDATE_CHANNEL", os.getenv("UPDATE_CHANNEL")),
+            fallback=DEFAULT_UPDATE_CHANNEL,
+        ),
         sample_interval_seconds=normalize_resource_sample_interval(
             persisted.get("RESOURCE_SAMPLE_INTERVAL", os.getenv("RESOURCE_SAMPLE_INTERVAL")),
         ),

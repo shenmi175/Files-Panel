@@ -11,7 +11,13 @@ from fastapi import HTTPException
 
 from app.core import storage
 from app.core.settings import SETTINGS
-from app.core.version import APP_VERSION, read_project_version
+from app.core.version import (
+    APP_VERSION,
+    DEFAULT_UPDATE_CHANNEL,
+    UPDATE_CHANNEL_CHOICES,
+    normalize_update_channel,
+    read_project_version,
+)
 from app.models import (
     BatchUpdateNodeResult,
     BatchUpdateTriggerResponse,
@@ -28,9 +34,6 @@ UPDATE_STATUS_FILE_NAME = "update-status.json"
 UPDATE_LOG_FILE_NAME = "update.log"
 UPDATE_STATUS_RUNNING = {"scheduled", "running"}
 GIT_TIMEOUT_SECONDS = 8
-DEFAULT_REMOTE_VERSION_REF = "origin/main"
-
-
 def _status_file_path() -> Path:
     return SETTINGS.state_dir / UPDATE_STATUS_FILE_NAME
 
@@ -89,9 +92,33 @@ def _run_git(source_dir: Path, *args: str) -> str | None:
     return output or None
 
 
-def _remote_version_ref(source_dir: Path) -> str:
-    ref = _run_git(source_dir, "symbolic-ref", "--short", "refs/remotes/origin/HEAD")
-    return ref or DEFAULT_REMOTE_VERSION_REF
+def _configured_update_channel(channel_override: str | None = None) -> str:
+    if channel_override is not None:
+        return normalize_update_channel(channel_override, fallback=DEFAULT_UPDATE_CHANNEL)
+    try:
+        persisted = storage.load_config_values()
+    except Exception:
+        persisted = {}
+    return normalize_update_channel(
+        persisted.get("UPDATE_CHANNEL") or os.getenv("UPDATE_CHANNEL") or SETTINGS.update_channel,
+        fallback=DEFAULT_UPDATE_CHANNEL,
+    )
+
+
+def _remote_version_ref(channel: str) -> str:
+    return f"origin/{normalize_update_channel(channel, fallback=DEFAULT_UPDATE_CHANNEL)}"
+
+
+def _remote_ref_exists(source_dir: Path, remote_ref: str) -> bool:
+    return (
+        _run_git(
+            source_dir,
+            "rev-parse",
+            "--verify",
+            f"refs/remotes/{remote_ref}",
+        )
+        is not None
+    )
 
 
 def _version_sort_key(raw_version: str | None) -> tuple[tuple[int, object], ...]:
@@ -110,40 +137,47 @@ def _version_sort_key(raw_version: str | None) -> tuple[tuple[int, object], ...]
 def _latest_available_version(
     source_dir: Path | None,
     *,
+    channel: str,
     project_dir_valid: bool,
     git_available: bool,
     git_repo: bool,
-) -> tuple[str | None, str | None]:
+) -> tuple[str | None, str | None, bool]:
     if not project_dir_valid or source_dir is None:
-        return None, None
+        return None, None, False
 
     local_source_version = read_project_version(source_dir)
     if not git_available or not git_repo:
-        return local_source_version, None
+        return local_source_version, None, False
 
     if _run_git(source_dir, "remote", "get-url", "origin") is None:
-        return local_source_version, None
+        return local_source_version, None, False
 
     if _run_git(source_dir, "fetch", "--quiet", "origin") is None:
-        return local_source_version, None
+        return local_source_version, None, False
 
-    remote_ref = _remote_version_ref(source_dir)
+    remote_ref = _remote_version_ref(channel)
+    if not _remote_ref_exists(source_dir, remote_ref):
+        return None, _utc_timestamp(), False
+
     remote_version = _run_git(source_dir, "show", f"{remote_ref}:VERSION")
     if remote_version:
-        return remote_version.strip(), _utc_timestamp()
-    return local_source_version, _utc_timestamp()
+        return remote_version.strip(), _utc_timestamp(), True
+    return local_source_version, _utc_timestamp(), True
 
 
-def build_update_status() -> UpdateStatusResponse:
+def build_update_status(channel_override: str | None = None) -> UpdateStatusResponse:
     source_dir = _source_dir()
     source_dir_exists = bool(source_dir and source_dir.exists())
     project_dir_valid = _is_project_dir(source_dir)
     git_available = command_available("git")
     git_repo = bool(source_dir and (source_dir / ".git").exists())
     status_payload = _load_status_payload()
+    channel = _configured_update_channel(channel_override)
+    channel_ref = _remote_version_ref(channel)
     current_version = read_project_version()
-    latest_version, latest_checked_at = _latest_available_version(
+    latest_version, latest_checked_at, channel_exists = _latest_available_version(
         source_dir,
+        channel=channel,
         project_dir_valid=project_dir_valid,
         git_available=git_available,
         git_repo=git_repo,
@@ -153,13 +187,23 @@ def build_update_status() -> UpdateStatusResponse:
         status = "failed"
 
     update_available = False
-    if current_version and latest_version:
+    if channel_exists and current_version and latest_version:
         current_key = _version_sort_key(current_version)
         latest_key = _version_sort_key(latest_version)
         if current_key and latest_key:
             update_available = latest_key > current_key
         else:
             update_available = latest_version != current_version
+
+    status_message = str(status_payload.get("message")) if status_payload.get("message") else None
+    if (
+        status_message is None
+        and project_dir_valid
+        and git_available
+        and git_repo
+        and not channel_exists
+    ):
+        status_message = f"release channel '{channel}' has not been published to origin"
 
     return UpdateStatusResponse(
         role=SETTINGS.role,
@@ -169,6 +213,10 @@ def build_update_status() -> UpdateStatusResponse:
         git_available=git_available,
         git_repo=git_repo,
         auto_update_available=helper_available() and project_dir_valid,
+        channel=channel,
+        available_channels=list(UPDATE_CHANNEL_CHOICES),
+        channel_ref=channel_ref,
+        channel_exists=channel_exists,
         current_version=current_version or APP_VERSION,
         latest_version=latest_version,
         update_available=update_available,
@@ -178,13 +226,15 @@ def build_update_status() -> UpdateStatusResponse:
         pull_latest=bool(status_payload.get("pull_latest")) if "pull_latest" in status_payload else None,
         started_at=str(status_payload.get("started_at")) if status_payload.get("started_at") else None,
         finished_at=str(status_payload.get("finished_at")) if status_payload.get("finished_at") else None,
-        message=str(status_payload.get("message")) if status_payload.get("message") else None,
+        message=status_message,
         log_path=str(status_payload.get("log_path")) if status_payload.get("log_path") else str(_log_file_path()),
     )
 
 
 def schedule_update(request: UpdateTriggerRequest) -> UpdateTriggerResponse:
-    status = build_update_status()
+    persisted_channel = _configured_update_channel()
+    next_channel = normalize_update_channel(request.channel, fallback=persisted_channel)
+    status = build_update_status(channel_override=next_channel)
     if status.status in UPDATE_STATUS_RUNNING:
         raise HTTPException(status_code=409, detail="an update is already running on this node")
     if not status.auto_update_available:
@@ -197,18 +247,34 @@ def schedule_update(request: UpdateTriggerRequest) -> UpdateTriggerResponse:
             status_code=400,
             detail="this node has no linked git repository; disable pull-latest or reinstall from a git checkout first",
         )
+    if next_channel != persisted_channel and not request.pull_latest:
+        raise HTTPException(
+            status_code=400,
+            detail="changing release channel requires pull-latest to stay enabled",
+        )
+    if request.pull_latest and status.git_repo and not status.channel_exists:
+        raise HTTPException(
+            status_code=400,
+            detail=f"release channel '{next_channel}' has not been published to origin",
+        )
+
+    try:
+        storage.save_config_values({"UPDATE_CHANNEL": next_channel})
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"failed to persist update channel: {exc}") from exc
 
     run_privileged_helper(
         [
             "schedule-update",
             request.mode,
             "1" if request.pull_latest else "0",
+            next_channel,
         ],
         "schedule automatic update",
         timeout_seconds=15,
     )
 
-    next_status = build_update_status()
+    next_status = build_update_status(channel_override=next_channel)
     return UpdateTriggerResponse(
         message="update scheduled",
         scheduled=True,

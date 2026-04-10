@@ -18,6 +18,7 @@ const RESTART_RECOVERY_INITIAL_DELAY_MS = 1500;
 const RESTART_RECOVERY_INTERVAL_MS = 1200;
 const RESTART_RECOVERY_MAX_ATTEMPTS = 20;
 const RESOURCE_SAMPLE_INTERVAL_OPTIONS = [5, 10, 15];
+const UPDATE_CHANNEL_OPTIONS = ["stable", "rc", "main"];
 let restartResolutionRunId = 0;
 
 function setText(node, value) {
@@ -64,6 +65,19 @@ function setChecked(node, checked, { skipWhileFocused = false } = {}) {
   if (node.checked !== nextValue) {
     node.checked = nextValue;
   }
+}
+
+function syncSelectOptions(node, values) {
+  if (!node || !Array.isArray(values) || !values.length) {
+    return;
+  }
+  const current = Array.from(node.options).map((option) => option.value);
+  if (current.length === values.length && current.every((value, index) => value === values[index])) {
+    return;
+  }
+  node.innerHTML = values
+    .map((value) => `<option value="${escapeHtml(value)}">${escapeHtml(value)}</option>`)
+    .join("");
 }
 
 function renderTextMetricCardMarkup(card, attrName) {
@@ -140,6 +154,15 @@ function currentUpdateTargetLabel() {
   return state.selectedServerName || "当前管理机";
 }
 
+function selectedUpdateChannel() {
+  return (
+    state.updateChannelOverride
+    || dom.nodeUpdateChannelInput?.value
+    || state.updateStatus?.channel
+    || "main"
+  );
+}
+
 function updateModeLabel(mode) {
   switch (mode) {
     case "quick":
@@ -174,6 +197,9 @@ function updateAvailabilityLabel(payload) {
   if (!payload?.auto_update_available) {
     return "不可用";
   }
+  if (payload?.git_repo && payload?.channel_exists === false) {
+    return "通道未发布";
+  }
   if (payload?.update_available) {
     return "有新版本";
   }
@@ -203,6 +229,14 @@ function translateUpdateMessage(message) {
       "当前节点未关联 Git 仓库；请关闭更新前拉取，或从 Git 工作区重新安装。",
     ],
     [
+      "changing release channel requires pull-latest to stay enabled",
+      "切换发布通道时必须保持更新前执行 Git 拉取。",
+    ],
+    [
+      "working tree has uncommitted changes; refusing to switch update channels automatically",
+      "源码目录存在未提交改动，已拒绝自动切换发布通道。",
+    ],
+    [
       "an update is already running on this node",
       "当前节点已有更新任务在运行。",
     ],
@@ -219,6 +253,11 @@ function translateUpdateMessage(message) {
     if (raw.startsWith(`${source}:`)) {
       return `${translated}：${raw.slice(source.length + 1).trim()}`;
     }
+  }
+
+  const missingChannelMatch = raw.match(/^release channel '([^']+)' has not been published to origin$/);
+  if (missingChannelMatch) {
+    return `所选发布通道尚未发布到远端仓库：${missingChannelMatch[1]}`;
   }
 
   return raw;
@@ -251,6 +290,8 @@ function buildUpdateStatusMarkup(payload) {
     } else {
       chips.push(renderUpdateStatusChip("缺少提权更新能力", "danger"));
     }
+  } else if (payload?.git_repo && payload?.channel_exists === false) {
+    chips.push(renderUpdateStatusChip(`通道未发布：${payload.channel}`, "danger"));
   } else if (payload?.update_available) {
     chips.push(renderUpdateStatusChip("发现新版本", "warning"));
   } else if (payload?.current_version && payload?.latest_version) {
@@ -263,6 +304,19 @@ function buildUpdateStatusMarkup(payload) {
     chips.push(renderUpdateStatusChip("已关联 Git 仓库", "success"));
   } else if (payload?.project_dir_valid) {
     chips.push(renderUpdateStatusChip("未关联 Git 仓库", "warning"));
+  }
+
+  if (payload?.channel) {
+    chips.push(renderUpdateStatusChip(`通道：${payload.channel}`));
+  }
+
+  if (payload?.channel_ref) {
+    chips.push(
+      renderUpdateStatusChip(
+        payload.channel_exists ? `跟踪 ${payload.channel_ref}` : `远端缺少 ${payload.channel_ref}`,
+        payload.channel_exists ? "success" : "danger"
+      )
+    );
   }
 
   if (payload?.status) {
@@ -504,6 +558,8 @@ export function renderConfig(config) {
   setValue(dom.configAgentRootInput, config.agent_root, { skipWhileFocused: true });
   setValue(dom.configPortInput, config.port, { skipWhileFocused: true });
   setValue(dom.configSampleIntervalInput, sampleInterval, { skipWhileFocused: true });
+  syncSelectOptions(dom.configUpdateChannelInput, config.available_update_channels || UPDATE_CHANNEL_OPTIONS);
+  setValue(dom.configUpdateChannelInput, config.update_channel || "main", { skipWhileFocused: true });
   if (!dom.configAgentTokenInput.value.trim() && document.activeElement !== dom.configAgentTokenInput) {
     setValue(dom.configAgentTokenInput, "");
   }
@@ -541,7 +597,7 @@ export function renderConfig(config) {
         key: "token-storage",
         label: "令牌 / 存储",
         value: config.token_configured ? "Agent Token 已配置" : "尚未配置 Agent Token",
-        note: `采样 ${sampleInterval} 秒，数据库 ${databasePath}`,
+        note: `通道 ${config.update_channel || "main"}，采样 ${sampleInterval} 秒，数据库 ${databasePath}`,
         tone: "tone-olive",
       },
     ],
@@ -700,18 +756,26 @@ export async function loadServers() {
 export function renderUpdateStatus(payload) {
   state.updateStatusLoaded = true;
   state.updateStatus = payload;
+  if (!state.updateChannelOverride) {
+    state.updateChannelOverride = payload?.channel || null;
+  }
 
   if (dom.nodeUpdateSummaryEl) {
     const targetLabel = currentUpdateTargetLabel();
     const sourceLabel = payload?.source_dir || "未关联源码目录";
+    const channelLabel = payload?.channel || "main";
     const checkedAt = payload?.latest_checked_at
       ? ` · 最近检查 ${formatUpdateTimestamp(payload.latest_checked_at)}`
       : "";
-    dom.nodeUpdateSummaryEl.textContent = `目标节点：${targetLabel} · 源码目录：${sourceLabel}${checkedAt}`;
+    dom.nodeUpdateSummaryEl.textContent = `目标节点：${targetLabel} · 发布通道：${channelLabel} · 源码目录：${sourceLabel}${checkedAt}`;
   }
 
   if (dom.nodeUpdateCurrentVersionEl) {
     dom.nodeUpdateCurrentVersionEl.textContent = payload?.current_version || "-";
+  }
+
+  if (dom.nodeUpdateChannelLabelEl) {
+    dom.nodeUpdateChannelLabelEl.textContent = payload?.channel || "main";
   }
 
   if (dom.nodeUpdateLatestVersionEl) {
@@ -726,6 +790,11 @@ export function renderUpdateStatus(payload) {
     setValue(dom.nodeUpdateModeInput, payload.mode, { skipWhileFocused: true });
   }
 
+  if (dom.nodeUpdateChannelInput) {
+    syncSelectOptions(dom.nodeUpdateChannelInput, payload?.available_channels || UPDATE_CHANNEL_OPTIONS);
+    setValue(dom.nodeUpdateChannelInput, payload?.channel || "main", { skipWhileFocused: true });
+  }
+
   if (dom.nodeUpdatePullLatestInput && payload?.pull_latest !== null && payload?.pull_latest !== undefined) {
     setChecked(dom.nodeUpdatePullLatestInput, payload.pull_latest, { skipWhileFocused: true });
   }
@@ -733,7 +802,7 @@ export function renderUpdateStatus(payload) {
   if (dom.triggerNodeUpdateButton) {
     const status = String(payload?.status || "").toLowerCase();
     const busy = status === "scheduled" || status === "running";
-    dom.triggerNodeUpdateButton.disabled = !payload?.auto_update_available || busy;
+    dom.triggerNodeUpdateButton.disabled = !payload?.auto_update_available || busy || (payload?.git_repo && payload?.channel_exists === false);
     dom.triggerNodeUpdateButton.textContent = busy ? "更新进行中" : "立即更新";
   }
 
@@ -750,7 +819,9 @@ export function renderUpdateStatus(payload) {
 }
 
 export async function loadUpdateStatus() {
-  const payload = await request("/api/update/status");
+  const channel = state.updateChannelOverride;
+  const query = channel ? `?channel=${encodeURIComponent(channel)}` : "";
+  const payload = await request(`/api/update/status${query}`);
   renderUpdateStatus(payload);
 }
 
@@ -899,6 +970,7 @@ export async function saveConfig(event) {
         agent_root: dom.configAgentRootInput.value.trim(),
         port: nextPort,
         resource_sample_interval: nextSampleInterval,
+        update_channel: dom.configUpdateChannelInput?.value || "main",
         agent_token: nextAgentToken,
         allow_public_ip: dom.configAllowPublicInput.checked,
         certbot_email: dom.configCertbotEmailInput.value.trim(),
@@ -906,7 +978,9 @@ export async function saveConfig(event) {
       }),
     });
     renderConfig(payload.config);
+    state.updateChannelOverride = payload.config?.update_channel || state.updateChannelOverride;
     await loadAccess().catch(() => {});
+    await loadUpdateStatus().catch(() => {});
     const tokenWillChange = Boolean(nextAgentToken);
 
     if (payload.restart_scheduled) {
@@ -1028,6 +1102,7 @@ export async function triggerNodeUpdate(event) {
   event?.preventDefault?.();
 
   const payload = {
+    channel: selectedUpdateChannel(),
     mode: dom.nodeUpdateModeInput?.value || "quick",
     pull_latest: Boolean(dom.nodeUpdatePullLatestInput?.checked),
   };
@@ -1038,9 +1113,10 @@ export async function triggerNodeUpdate(event) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
+    state.updateChannelOverride = response.status?.channel || payload.channel;
     renderUpdateStatus(response.status);
     showStatus(
-      `已为${currentUpdateTargetLabel()}安排${updateModeLabel(payload.mode)}`,
+      `已为${currentUpdateTargetLabel()}安排${updateModeLabel(payload.mode)}，通道 ${payload.channel}`,
       "info",
       { autoClearMs: 8000 }
     );
@@ -1078,6 +1154,7 @@ export async function triggerAllNodeUpdates() {
   }
 
   const payload = {
+    channel: selectedUpdateChannel(),
     mode: dom.nodeUpdateModeInput?.value || "quick",
     pull_latest: Boolean(dom.nodeUpdatePullLatestInput?.checked),
   };
@@ -1097,7 +1174,7 @@ export async function triggerAllNodeUpdates() {
     showStatus(
       firstFailure
         ? `${summary}；${firstFailure.server_name}：${translateUpdateMessage(firstFailure.message)}`
-        : `${summary}；方式：${updateModeLabel(response.mode)}`,
+        : `${summary}；方式：${updateModeLabel(response.mode)} · 通道：${payload.channel}`,
       firstFailure ? "info" : "success",
       { autoClearMs: 10000 }
     );

@@ -17,6 +17,11 @@ from app.core.settings import (
     parse_system_readonly_paths,
 )
 from app.core.storage import load_access_state, load_config_values, save_access_state, save_config_values
+from app.core.version import (
+    DEFAULT_UPDATE_CHANNEL,
+    UPDATE_CHANNEL_CHOICES,
+    normalize_update_channel,
+)
 from app.models import (
     AccessStatus,
     ConfigResponse,
@@ -53,6 +58,7 @@ def default_config_values() -> dict[str, str]:
         "AGENT_NAME": SETTINGS.agent_name,
         "AGENT_ROOT": str(SETTINGS.root_path),
         "AGENT_TOKEN": SETTINGS.auth_token or "",
+        "UPDATE_CHANNEL": SETTINGS.update_channel,
         "RESOURCE_SAMPLE_INTERVAL": str(SETTINGS.sample_interval_seconds),
         "SYSTEM_READONLY_PATHS": ",".join(SETTINGS.system_readonly_paths),
         "CERTBOT_EMAIL": SETTINGS.certbot_email or "",
@@ -308,6 +314,11 @@ def build_config_response() -> ConfigResponse:
         desired_bind_port=desired_port,
         restart_pending=runtime_restart_needed(config_values),
         database_path=str(SETTINGS.database_path),
+        update_channel=normalize_update_channel(
+            config_values.get("UPDATE_CHANNEL"),
+            fallback=DEFAULT_UPDATE_CHANNEL,
+        ),
+        available_update_channels=list(UPDATE_CHANNEL_CHOICES),
         system_readonly_paths=list(
             parse_system_readonly_paths(config_values.get("SYSTEM_READONLY_PATHS"))
         ),
@@ -326,6 +337,10 @@ def update_config(request: ConfigUpdateRequest) -> ConfigUpdateResponse:
     certbot_email = (request.certbot_email or "").strip()
     allow_public_ip = bool(request.allow_public_ip)
     allow_self_restart = bool(request.allow_self_restart)
+    update_channel = normalize_update_channel(
+        request.update_channel,
+        fallback=DEFAULT_UPDATE_CHANNEL,
+    )
     sample_interval = normalize_resource_sample_interval(
         request.resource_sample_interval,
         fallback=SETTINGS.sample_interval_seconds,
@@ -336,6 +351,7 @@ def update_config(request: ConfigUpdateRequest) -> ConfigUpdateResponse:
     config_values["AGENT_ROOT"] = str(agent_root)
     config_values["PORT"] = str(request.port)
     config_values["RESOURCE_SAMPLE_INTERVAL"] = str(sample_interval)
+    config_values["UPDATE_CHANNEL"] = update_channel
     config_values["HOST"] = "0.0.0.0" if allow_public_ip else "127.0.0.1"
     config_values["CERTBOT_EMAIL"] = certbot_email
     config_values["ALLOW_SELF_RESTART"] = "1" if allow_self_restart else "0"
