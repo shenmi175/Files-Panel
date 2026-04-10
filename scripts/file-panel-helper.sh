@@ -199,10 +199,18 @@ source_dir=$(printf '%q' "$source_dir")
 mode=$(printf '%q' "$mode")
 pull_latest=$(printf '%q' "$pull_latest")
 channel=$(printf '%q' "$channel")
+service_user=$(printf '%q' "$SERVICE_USER")
 global_command=$(printf '%q' "$GLOBAL_COMMAND_PATH")
 helper_script=$(printf '%q' "$0")
 started_at=\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")
 worker_pid=\$\$
+run_git() {
+  if [[ \$(id -u) -eq 0 ]] && command -v runuser >/dev/null 2>&1 && id \"\$service_user\" >/dev/null 2>&1; then
+    runuser -u \"\$service_user\" -- git -C \"\$source_dir\" \"\$@\"
+    return
+  fi
+  git -C \"\$source_dir\" \"\$@\"
+}
 python3 - \"\$status_path\" running \"\$mode\" \"\$pull_latest\" \"\$started_at\" \"\" \"update running\" \"\$log_path\" \"\$worker_pid\" <<'PY'
 import json
 import sys
@@ -225,23 +233,23 @@ PY
   echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] starting automatic update (\$mode, channel=\$channel)\"
   if [[ \"\$pull_latest\" == \"1\" ]]; then
     echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] git fetch origin \$channel in \$source_dir\"
-    git -C \"\$source_dir\" fetch --quiet origin \"\$channel\"
-    current_branch=\$(git -C \"\$source_dir\" branch --show-current)
+    run_git fetch --quiet origin \"\$channel\"
+    current_branch=\$(run_git branch --show-current)
     if [[ \"\$current_branch\" != \"\$channel\" ]]; then
-      if ! git -C \"\$source_dir\" diff --quiet --ignore-submodules HEAD -- || ! git -C \"\$source_dir\" diff --cached --quiet --ignore-submodules --; then
+      if ! run_git diff --quiet --ignore-submodules HEAD -- || ! run_git diff --cached --quiet --ignore-submodules --; then
         echo \"working tree has uncommitted changes; refusing to switch update channels automatically\"
         exit 2
       fi
-      if git -C \"\$source_dir\" show-ref --verify --quiet \"refs/heads/\$channel\"; then
+      if run_git show-ref --verify --quiet \"refs/heads/\$channel\"; then
         echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] git checkout \$channel\"
-        git -C \"\$source_dir\" checkout \"\$channel\"
+        run_git checkout \"\$channel\"
       else
         echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] git checkout -b \$channel --track origin/\$channel\"
-        git -C \"\$source_dir\" checkout -b \"\$channel\" --track \"origin/\$channel\"
+        run_git checkout -b \"\$channel\" --track \"origin/\$channel\"
       fi
     fi
     echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] git pull --ff-only origin \$channel in \$source_dir\"
-    git -C \"\$source_dir\" pull --ff-only origin \"\$channel\"
+    run_git pull --ff-only origin \"\$channel\"
   else
     echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] skip git pull\"
   fi

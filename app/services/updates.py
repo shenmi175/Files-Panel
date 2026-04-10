@@ -268,14 +268,11 @@ def build_update_status(channel_override: str | None = None) -> UpdateStatusResp
             update_available = latest_version != current_version
 
     status_message = str(status_payload.get("message")) if status_payload.get("message") else None
-    if (
-        status_message is None
-        and project_dir_valid
-        and git_available
-        and git_repo
-        and not channel_exists
-    ):
-        status_message = f"release channel '{channel}' has not been published to origin"
+    if status_message is None and project_dir_valid and git_available and git_repo:
+        if not latest_checked_at and not channel_exists:
+            status_message = "failed to query remote repository; inspect git access or safe.directory"
+        elif not channel_exists:
+            status_message = f"release channel '{channel}' has not been published to origin"
 
     return UpdateStatusResponse(
         role=SETTINGS.role,

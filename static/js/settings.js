@@ -198,7 +198,7 @@ function updateAvailabilityLabel(payload) {
     return "不可用";
   }
   if (payload?.git_repo && payload?.channel_exists === false) {
-    return "通道未发布";
+    return payload?.latest_checked_at ? "通道未发布" : "远端检查失败";
   }
   if (payload?.update_available) {
     return "有新版本";
@@ -235,6 +235,10 @@ function translateUpdateMessage(message) {
     [
       "working tree has uncommitted changes; refusing to switch update channels automatically",
       "源码目录存在未提交改动，已拒绝自动切换发布通道。",
+    ],
+    [
+      "failed to query remote repository; inspect git access or safe.directory",
+      "无法检查远端仓库；请检查 Git 访问权限或 safe.directory 配置。",
     ],
     [
       "update helper is unavailable; previous update state cannot continue",
@@ -307,7 +311,12 @@ function buildUpdateStatusMarkup(payload) {
       chips.push(renderUpdateStatusChip("缺少提权更新能力", "danger"));
     }
   } else if (payload?.git_repo && payload?.channel_exists === false) {
-    chips.push(renderUpdateStatusChip(`通道未发布：${payload.channel}`, "danger"));
+    chips.push(
+      renderUpdateStatusChip(
+        payload?.latest_checked_at ? `通道未发布：${payload.channel}` : "远端检查失败",
+        payload?.latest_checked_at ? "danger" : "warning"
+      )
+    );
   } else if (payload?.update_available) {
     chips.push(renderUpdateStatusChip("发现新版本", "warning"));
   } else if (payload?.current_version && payload?.latest_version) {
@@ -329,8 +338,12 @@ function buildUpdateStatusMarkup(payload) {
   if (payload?.channel_ref) {
     chips.push(
       renderUpdateStatusChip(
-        payload.channel_exists ? `跟踪 ${payload.channel_ref}` : `远端缺少 ${payload.channel_ref}`,
-        payload.channel_exists ? "success" : "danger"
+        payload.channel_exists
+          ? `跟踪 ${payload.channel_ref}`
+          : payload?.latest_checked_at
+            ? `远端缺少 ${payload.channel_ref}`
+            : `无法检查 ${payload.channel_ref}`,
+        payload.channel_exists ? "success" : payload?.latest_checked_at ? "danger" : "warning"
       )
     );
   }
