@@ -160,11 +160,71 @@ validate_update_channel() {
   esac
 }
 
+run_update_worker() {
+  local mode="${1:-quick}"
+  local pull_latest="${2:-1}"
+  local channel="${3:-main}"
+  local status_path="${4:-$(update_status_path)}"
+  local log_path="${5:-$(update_log_path)}"
+  local source_dir="${6:-$(source_project_dir)}"
+  local started_at="${7:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
+  local worker_pid current_branch exit_code finished_at
+
+  validate_update_mode "$mode"
+  validate_update_channel "$channel"
+  worker_pid="$$"
+
+  run_git() {
+    if [[ $(id -u) -eq 0 ]] && command -v runuser >/dev/null 2>&1 && id "$SERVICE_USER" >/dev/null 2>&1; then
+      runuser -u "$SERVICE_USER" -- git -C "$source_dir" "$@"
+      return
+    fi
+    git -C "$source_dir" "$@"
+  }
+
+  write_update_status_json "running" "$mode" "$pull_latest" "$started_at" "" "update running" "$log_path" "$worker_pid"
+  {
+    echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] starting automatic update ($mode, channel=$channel)"
+    if [[ "$pull_latest" == "1" ]]; then
+      echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] git fetch origin $channel in $source_dir"
+      run_git fetch --quiet origin "$channel"
+      current_branch="$(run_git branch --show-current)"
+      if [[ "$current_branch" != "$channel" ]]; then
+        if ! run_git diff --quiet --ignore-submodules HEAD -- || ! run_git diff --cached --quiet --ignore-submodules --; then
+          echo "working tree has uncommitted changes; refusing to switch update channels automatically"
+          exit 2
+        fi
+        if run_git show-ref --verify --quiet "refs/heads/$channel"; then
+          echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] git checkout $channel"
+          run_git checkout "$channel"
+        else
+          echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] git checkout -b $channel --track origin/$channel"
+          run_git checkout -b "$channel" --track "origin/$channel"
+        fi
+      fi
+      echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] git pull --ff-only origin $channel in $source_dir"
+      run_git pull --ff-only origin "$channel"
+    else
+      echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] skip git pull"
+    fi
+    echo "[$(date -u +"%Y-%m-%dT%H:%M:%SZ")] invoking $GLOBAL_COMMAND_PATH $mode"
+    FILE_PANEL_SOURCE_DIR="$source_dir" "$GLOBAL_COMMAND_PATH" "$mode"
+  } >>"$log_path" 2>&1
+  exit_code=$?
+  finished_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+  if [[ $exit_code -eq 0 ]]; then
+    write_update_status_json "succeeded" "$mode" "$pull_latest" "$started_at" "$finished_at" "update completed" "$log_path" ""
+  else
+    write_update_status_json "failed" "$mode" "$pull_latest" "$started_at" "$finished_at" "update failed; inspect update.log" "$log_path" ""
+  fi
+  return "$exit_code"
+}
+
 schedule_update() {
   local mode="${1:-quick}"
   local pull_latest="${2:-1}"
   local channel="${3:-main}"
-  local source_dir role status_path log_path started_at
+  local source_dir role status_path log_path started_at unit_name
 
   validate_update_mode "$mode"
   validate_update_channel "$channel"
@@ -190,114 +250,17 @@ schedule_update() {
   started_at="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
   write_update_status_json "scheduled" "$mode" "$pull_latest" "$started_at" "" "update scheduled" "$log_path"
   : >"$log_path"
-
-  nohup /bin/bash -lc "
-set -euo pipefail
-status_path=$(printf '%q' "$status_path")
-log_path=$(printf '%q' "$log_path")
-source_dir=$(printf '%q' "$source_dir")
-mode=$(printf '%q' "$mode")
-pull_latest=$(printf '%q' "$pull_latest")
-channel=$(printf '%q' "$channel")
-service_user=$(printf '%q' "$SERVICE_USER")
-global_command=$(printf '%q' "$GLOBAL_COMMAND_PATH")
-helper_script=$(printf '%q' "$0")
-started_at=\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")
-worker_pid=\$\$
-run_git() {
-  if [[ \$(id -u) -eq 0 ]] && command -v runuser >/dev/null 2>&1 && id \"\$service_user\" >/dev/null 2>&1; then
-    runuser -u \"\$service_user\" -- git -C \"\$source_dir\" \"\$@\"
-    return
-  fi
-  git -C \"\$source_dir\" \"\$@\"
-}
-python3 - \"\$status_path\" running \"\$mode\" \"\$pull_latest\" \"\$started_at\" \"\" \"update running\" \"\$log_path\" \"\$worker_pid\" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-status_path = Path(sys.argv[1])
-payload = {
-    'status': sys.argv[2],
-    'mode': sys.argv[3] or None,
-    'pull_latest': sys.argv[4] == '1',
-    'started_at': sys.argv[5] or None,
-    'finished_at': sys.argv[6] or None,
-    'message': sys.argv[7] or None,
-    'log_path': sys.argv[8] or None,
-    'pid': int(sys.argv[9]) if sys.argv[9] else None,
-}
-status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
-PY
-{
-  echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] starting automatic update (\$mode, channel=\$channel)\"
-  if [[ \"\$pull_latest\" == \"1\" ]]; then
-    echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] git fetch origin \$channel in \$source_dir\"
-    run_git fetch --quiet origin \"\$channel\"
-    current_branch=\$(run_git branch --show-current)
-    if [[ \"\$current_branch\" != \"\$channel\" ]]; then
-      if ! run_git diff --quiet --ignore-submodules HEAD -- || ! run_git diff --cached --quiet --ignore-submodules --; then
-        echo \"working tree has uncommitted changes; refusing to switch update channels automatically\"
-        exit 2
-      fi
-      if run_git show-ref --verify --quiet \"refs/heads/\$channel\"; then
-        echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] git checkout \$channel\"
-        run_git checkout \"\$channel\"
-      else
-        echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] git checkout -b \$channel --track origin/\$channel\"
-        run_git checkout -b \"\$channel\" --track \"origin/\$channel\"
-      fi
+  if command -v systemd-run >/dev/null 2>&1; then
+    unit_name="file-panel-update-$(date -u +"%Y%m%d%H%M%S")-$RANDOM"
+    if systemd-run --unit="$unit_name" --collect --quiet \
+      "$0" run-update-worker "$mode" "$pull_latest" "$channel" "$status_path" "$log_path" "$source_dir" "$started_at" \
+      >/dev/null 2>&1; then
+      return
     fi
-    echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] git pull --ff-only origin \$channel in \$source_dir\"
-    run_git pull --ff-only origin \"\$channel\"
-  else
-    echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] skip git pull\"
   fi
-  echo \"[\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")] invoking \$global_command \$mode\"
-  FILE_PANEL_SOURCE_DIR=\"\$source_dir\" \"\$global_command\" \"\$mode\"
-} >>\"\$log_path\" 2>&1
-exit_code=\$?
-finished_at=\$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")
-if [[ \$exit_code -eq 0 ]]; then
-  python3 - \"\$status_path\" succeeded \"\$mode\" \"\$pull_latest\" \"\$started_at\" \"\$finished_at\" \"update completed\" \"\$log_path\" \"\" <<'PY'
-import json
-import sys
-from pathlib import Path
 
-status_path = Path(sys.argv[1])
-payload = {
-    'status': sys.argv[2],
-    'mode': sys.argv[3] or None,
-    'pull_latest': sys.argv[4] == '1',
-    'started_at': sys.argv[5] or None,
-    'finished_at': sys.argv[6] or None,
-    'message': sys.argv[7] or None,
-    'log_path': sys.argv[8] or None,
-    'pid': int(sys.argv[9]) if sys.argv[9] else None,
-}
-status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
-PY
-else
-  python3 - \"\$status_path\" failed \"\$mode\" \"\$pull_latest\" \"\$started_at\" \"\$finished_at\" \"update failed; inspect update.log\" \"\$log_path\" \"\" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-status_path = Path(sys.argv[1])
-payload = {
-    'status': sys.argv[2],
-    'mode': sys.argv[3] or None,
-    'pull_latest': sys.argv[4] == '1',
-    'started_at': sys.argv[5] or None,
-    'finished_at': sys.argv[6] or None,
-    'message': sys.argv[7] or None,
-    'log_path': sys.argv[8] or None,
-    'pid': int(sys.argv[9]) if sys.argv[9] else None,
-}
-status_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding='utf-8')
-PY
-fi
-" >/dev/null 2>&1 &
+  nohup "$0" run-update-worker "$mode" "$pull_latest" "$channel" "$status_path" "$log_path" "$source_dir" "$started_at" \
+    >/dev/null 2>&1 &
 }
 
 DOMAIN_RE='^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$'
@@ -744,7 +707,10 @@ case "$command" in
     issue_cert "${1:-}" "${2:-}"
     ;;
   schedule-update)
-    schedule_update "${1:-quick}" "${2:-1}"
+    schedule_update "${1:-quick}" "${2:-1}" "${3:-main}"
+    ;;
+  run-update-worker)
+    run_update_worker "${1:-quick}" "${2:-1}" "${3:-main}" "${4:-}" "${5:-}" "${6:-}" "${7:-}"
     ;;
   grant-path-access)
     grant_path_access "${1:-}"

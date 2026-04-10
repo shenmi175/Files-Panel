@@ -182,6 +182,8 @@ class ResourceHistorySummary(BaseModel):
     load_ratio_percent: ResourceMetricRollup
     network_download_bps: ResourceMetricRollup = Field(default_factory=ResourceMetricRollup)
     network_upload_bps: ResourceMetricRollup = Field(default_factory=ResourceMetricRollup)
+    network_download_bytes: int = 0
+    network_upload_bytes: int = 0
 
 
 class ResourceHistoryResponse(BaseModel):

@@ -38,13 +38,18 @@ from app.services.common import format_uptime, human_bytes, utc_now
 
 
 RESOURCE_HISTORY_RANGES: dict[str, int] = {
-    "15m": 15 * 60,
-    "1h": 60 * 60,
-    "6h": 6 * 60 * 60,
-    "24h": 24 * 60 * 60,
+    "1d": 24 * 60 * 60,
     "7d": 7 * 24 * 60 * 60,
+    "15d": 15 * 24 * 60 * 60,
+    "30d": 30 * 24 * 60 * 60,
 }
-DEFAULT_RESOURCE_HISTORY_RANGE = "1h"
+DEFAULT_RESOURCE_HISTORY_RANGE = "30d"
+RESOURCE_HISTORY_RANGE_ALIASES: dict[str, str] = {
+    "15m": "1d",
+    "1h": "1d",
+    "6h": "1d",
+    "24h": "1d",
+}
 RESOURCE_HISTORY_MAX_CHART_POINTS = 240
 RESOURCE_HISTORY_PRUNE_INTERVAL_SECONDS = 6 * 60 * 60
 
@@ -75,6 +80,7 @@ def _round_metric(value: float | None) -> float | None:
 
 def _resolve_history_range(range_key: str | None) -> tuple[str, int]:
     normalized = str(range_key or DEFAULT_RESOURCE_HISTORY_RANGE).strip().lower()
+    normalized = RESOURCE_HISTORY_RANGE_ALIASES.get(normalized, normalized)
     seconds = RESOURCE_HISTORY_RANGES.get(normalized)
     if seconds is None:
         return DEFAULT_RESOURCE_HISTORY_RANGE, RESOURCE_HISTORY_RANGES[DEFAULT_RESOURCE_HISTORY_RANGE]
@@ -146,6 +152,9 @@ def _build_metric_rollup(
 
 def _build_history_summary(
     records: list[dict[str, float | int | str]],
+    *,
+    range_start: datetime,
+    base_resolution_seconds: int,
 ) -> ResourceHistorySummary:
     if not records:
         empty = ResourceMetricRollup(current=None, average_1m=None, average_5m=None)
@@ -156,7 +165,25 @@ def _build_history_summary(
             load_ratio_percent=empty,
             network_download_bps=empty,
             network_upload_bps=empty,
+            network_download_bytes=0,
+            network_upload_bytes=0,
         )
+
+    download_bytes = 0.0
+    upload_bytes = 0.0
+    previous_sampled_at: datetime | None = None
+    for record in records:
+        sampled_at = _parse_utc_timestamp(str(record["sampled_at"]))
+        if previous_sampled_at is None:
+            elapsed_seconds = max((sampled_at - range_start).total_seconds(), 0.0)
+            if elapsed_seconds <= 0:
+                elapsed_seconds = float(base_resolution_seconds)
+        else:
+            elapsed_seconds = max((sampled_at - previous_sampled_at).total_seconds(), 0.0)
+
+        download_bytes += float(record.get("network_download_bps") or 0) * elapsed_seconds
+        upload_bytes += float(record.get("network_upload_bps") or 0) * elapsed_seconds
+        previous_sampled_at = sampled_at
 
     latest_at = _parse_utc_timestamp(str(records[-1]["sampled_at"]))
     return ResourceHistorySummary(
@@ -166,6 +193,8 @@ def _build_history_summary(
         load_ratio_percent=_build_metric_rollup(records, "load_ratio_percent", latest_at=latest_at),
         network_download_bps=_build_metric_rollup(records, "network_download_bps", latest_at=latest_at),
         network_upload_bps=_build_metric_rollup(records, "network_upload_bps", latest_at=latest_at),
+        network_download_bytes=int(round(download_bytes)),
+        network_upload_bytes=int(round(upload_bytes)),
     )
 
 
@@ -535,7 +564,11 @@ def get_resource_history(range_key: str | None = None) -> ResourceHistoryRespons
         range_start=range_start,
         base_resolution_seconds=SETTINGS.sample_interval_seconds,
     )
-    summary = _build_history_summary(records)
+    summary = _build_history_summary(
+        records,
+        range_start=range_start,
+        base_resolution_seconds=SETTINGS.sample_interval_seconds,
+    )
 
     return ResourceHistoryResponse(
         interval_seconds=SETTINGS.sample_interval_seconds,

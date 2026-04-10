@@ -1,6 +1,7 @@
 import {
   dom,
   escapeHtml,
+  formatBytes,
   formatCount,
   formatPercent,
   formatRate,
@@ -20,11 +21,10 @@ const CHART_SERIES = [
 ];
 
 const RANGE_OPTIONS = [
-  { key: "15m", label: "15 分钟" },
-  { key: "1h", label: "1 小时" },
-  { key: "6h", label: "6 小时" },
-  { key: "24h", label: "24 小时" },
+  { key: "1d", label: "1 天" },
   { key: "7d", label: "7 天" },
+  { key: "15d", label: "15 天" },
+  { key: "30d", label: "30 天" },
 ];
 
 const CHART_WIDTH = 980;
@@ -62,8 +62,8 @@ function formatRollupValue(value) {
   return value === null || value === undefined ? "-" : formatMetricPercent(Number(value));
 }
 
-function formatRateValue(value) {
-  return value === null || value === undefined ? "-" : formatRate(Number(value));
+function formatTrafficValue(value) {
+  return value === null || value === undefined ? "-" : formatBytes(Number(value));
 }
 
 function parsePercent(rawValue) {
@@ -132,6 +132,8 @@ function buildFallbackHistory(snapshot) {
       load_ratio_percent: makeRollup(currentLoad),
       network_download_bps: makeRollup(currentDownload),
       network_upload_bps: makeRollup(currentUpload),
+      network_download_bytes: null,
+      network_upload_bytes: null,
     },
   };
 }
@@ -245,9 +247,9 @@ function buildRuntimeCards(snapshot, historyPayload, swap, inode, processes) {
     },
     {
       key: "network",
-      label: "带宽使用",
-      value: `下行 ${formatRate(snapshot.network.download_bps)} / 上行 ${formatRate(snapshot.network.upload_bps)}`,
-      note: `1m 均值 ${formatRateValue(bandwidthRollup.network_download_bps?.average_1m)} / ${formatRateValue(bandwidthRollup.network_upload_bps?.average_1m)} · 5m 均值 ${formatRateValue(bandwidthRollup.network_download_bps?.average_5m)} / ${formatRateValue(bandwidthRollup.network_upload_bps?.average_5m)}`,
+      label: "流量统计",
+      value: `下行 ${formatTrafficValue(bandwidthRollup.network_download_bytes)} / 上行 ${formatTrafficValue(bandwidthRollup.network_upload_bytes)}`,
+      note: `当前速率 ${formatRate(snapshot.network.download_bps)} / ${formatRate(snapshot.network.upload_bps)} · ${rangeLabel(historyPayload.range_key)} 累计`,
       tone: "tone-green",
       cardClass: "",
     },

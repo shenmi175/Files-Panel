@@ -33,7 +33,7 @@ export const state = {
   parentPath: null,
   showHidden: false,
   resourceSampleInterval: 5,
-  resourceRange: "1h",
+  resourceRange: "30d",
   activeView: "overview",
   resourcesLoaded: false,
   filesLoaded: false,
