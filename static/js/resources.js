@@ -33,6 +33,9 @@ const CHART_PADDING = { top: 18, right: 18, bottom: 34, left: 34 };
 let resourcesScaffoldReady = false;
 let chartScaffoldReady = false;
 let breakdownScaffoldReady = false;
+let latestResourceSnapshot = null;
+let latestDockerStatus = null;
+let resourceRequestEpoch = 0;
 
 function formatMetricPercent(value) {
   if (!Number.isFinite(value)) {
@@ -611,7 +614,7 @@ function summarizeDocker(docker) {
   };
 }
 
-function renderResources(snapshot, historyPayload, docker) {
+function renderResourceOverview(snapshot, historyPayload) {
   const summary = historyPayload?.summary || buildFallbackHistory(snapshot).summary;
   const swap = snapshot.swap || { used_mb: 0, total_mb: 0, free_mb: 0, used_percent: null };
   const inode = snapshot.inode || {
@@ -630,10 +633,18 @@ function renderResources(snapshot, historyPayload, docker) {
     buildRollupCards(snapshot, historyPayload, summary),
     buildRuntimeCards(snapshot, historyPayload, swap, inode, processes)
   );
+}
+
+function renderResourceBreakdowns(snapshot, docker) {
   ensureBreakdownScaffold();
   patchDockerSection(docker);
   patchNetworkSection(snapshot);
   patchDiskSection(snapshot);
+}
+
+function renderResources(snapshot, historyPayload, docker) {
+  renderResourceOverview(snapshot, historyPayload);
+  renderResourceBreakdowns(snapshot, docker);
 }
 
 function renderLegend() {
@@ -773,11 +784,14 @@ async function switchRange(rangeKey) {
   if (!rangeKey || rangeKey === state.resourceRange) {
     return;
   }
+  const previousRange = state.resourceRange;
   state.resourceRange = rangeKey;
   syncRangeButtons();
   try {
-    await loadResourcesSection();
+    await loadResourceHistoryOnly();
   } catch (error) {
+    state.resourceRange = previousRange;
+    syncRangeButtons();
     showStatus(error.message, "error");
   }
 }
@@ -788,7 +802,26 @@ dom.resourceRangeButtons.forEach((button) => {
   });
 });
 
+async function loadResourceHistoryOnly() {
+  if (!latestResourceSnapshot || !state.resourcesLoaded) {
+    await loadResourcesSection();
+    return;
+  }
+
+  const requestEpoch = ++resourceRequestEpoch;
+  const historyPayload = await request(
+    `/api/resources/history?range=${encodeURIComponent(state.resourceRange)}`
+  );
+  if (requestEpoch !== resourceRequestEpoch) {
+    return;
+  }
+
+  renderResourceOverview(latestResourceSnapshot, historyPayload);
+  renderResourceChart(historyPayload);
+}
+
 export async function loadResourcesSection({ forceRefresh = false } = {}) {
+  const requestEpoch = ++resourceRequestEpoch;
   const historyPath = `/api/resources/history?range=${encodeURIComponent(state.resourceRange)}`;
   const [snapshotResult, historyResult, dockerResult] = await Promise.allSettled([
     request(`/api/resources${forceRefresh ? "?fresh=true" : ""}`),
@@ -797,9 +830,16 @@ export async function loadResourcesSection({ forceRefresh = false } = {}) {
   ]);
 
   if (snapshotResult.status !== "fulfilled") {
+    if (requestEpoch !== resourceRequestEpoch) {
+      return;
+    }
     state.resourcesLoaded = false;
     setResourcesPlaceholder(snapshotResult.reason.message);
     throw snapshotResult.reason;
+  }
+
+  if (requestEpoch !== resourceRequestEpoch) {
+    return;
   }
 
   const historyPayload =
@@ -807,11 +847,13 @@ export async function loadResourcesSection({ forceRefresh = false } = {}) {
       ? historyResult.value
       : buildFallbackHistory(snapshotResult.value);
 
+  latestResourceSnapshot = snapshotResult.value;
+  latestDockerStatus = dockerResult.status === "fulfilled" ? dockerResult.value : null;
   state.resourcesLoaded = true;
   renderResources(
-    snapshotResult.value,
+    latestResourceSnapshot,
     historyPayload,
-    dockerResult.status === "fulfilled" ? dockerResult.value : null
+    latestDockerStatus
   );
 
   if (historyResult.status === "fulfilled") {
@@ -823,6 +865,6 @@ export async function loadResourcesSection({ forceRefresh = false } = {}) {
   if (dockerResult.status === "rejected") {
     state.docker = null;
   } else {
-    state.docker = dockerResult.value;
+    state.docker = latestDockerStatus;
   }
 }
