@@ -88,8 +88,7 @@ def _run_git(source_dir: Path, *args: str) -> str | None:
     except (OSError, subprocess.SubprocessError):
         return None
 
-    output = completed.stdout.strip()
-    return output or None
+    return completed.stdout.strip()
 
 
 def _configured_update_channel(channel_override: str | None = None) -> str:
